@@ -1,40 +1,40 @@
-# Plano de execução: backend Dupply v1 + integração de rampa (Anchor / Etherfuse)
+# Execution plan: Dupply backend v1 + ramp integration (Anchor / Etherfuse)
 
-**Data:** 2026-05-16  
-**Escopo:** definir **v1** do serviço em `dupply-backend` (API + persistência + jobs) e **uma** integração inicial de **rampa/câmbio**, com preferência documentada por **Etherfuse FX API**, mantendo o desenho **extensível** para **anchor SEP-24** no futuro.  
-**Artefactos existentes:** contrato Soroban `DuplicataRegistry` (ver `contracts/duplicata-registry/` e `DEPLOYMENT-testnet.md`); indexador Node em `indexer/`.
-
----
-
-## 1. Objetivos do produto v1
-
-| ID | Objetivo | Medida de sucesso |
-|----|----------|-------------------|
-| O1 | Expor API REST segura para o frontend (futuro) orquestrar duplicatas | OpenAPI publicado; auth mínima funcional |
-| O2 | Persistir estado de negócio off-chain | PostgreSQL (ou SQLite só dev) com migrações |
-| O3 | Integrar **um** provedor de rampa | Fluxo sandbox: quote → order → estado persistido |
-| O4 | Correlacionar rampa com chain | Guardar `stellar_tx_hash` / `contract_id` / `duplicata_id` quando aplicável |
-| O5 | Observabilidade | Logs estruturados, healthcheck, métricas básicas |
-
-**Fora de escopo v1 (explícito):** novo UI; custódia centralizada de chaves de utilizador sem modelo legal claro; mainnet em produção sem revisão de compliance.
+**Date:** 2026-05-16  
+**Scope:** Define **v1** of the service in `dupply-backend` (API + persistence + jobs) and **one** initial **ramp/exchange** integration, with documented preference for **Etherfuse FX API**, while keeping the design **extensible** for **SEP-24 anchors** later.  
+**Existing artifacts:** Soroban `DuplicataRegistry` contract (see `contracts/duplicata-registry/` and `DEPLOYMENT-testnet.md`); Node indexer skeleton in `indexer/`.
 
 ---
 
-## 2. Arquitetura alvo (alto nível)
+## 1. Product goals for v1
+
+| ID | Goal | Success measure |
+|----|------|-----------------|
+| O1 | Expose a secure REST API for the (future) frontend to orchestrate duplicatas | Published OpenAPI; minimal working auth |
+| O2 | Persist off-chain business state | PostgreSQL (or SQLite in dev only) with migrations |
+| O3 | Integrate **one** ramp provider | Sandbox flow: quote → order → persisted state |
+| O4 | Correlate ramp with chain | Store `stellar_tx_hash` / `contract_id` / `duplicata_id` when applicable |
+| O5 | Observability | Structured logs, health check, basic metrics |
+
+**Explicitly out of scope v1:** new UI; centralized custody of user keys without a clear legal model; mainnet in production without a compliance review.
+
+---
+
+## 2. Target architecture (high level)
 
 ```mermaid
 flowchart LR
-  subgraph clients [Clientes]
-    FE[Frontend futuro]
+  subgraph clients [Clients]
+    FE[Future frontend]
   end
   subgraph dupply_api [Dupply API v1]
     HTTP[HTTP REST]
-    AUTH[Auth JWT ou API key]
+    AUTH[Auth JWT or API key]
     DUP[DuplicataService]
     RAILS[RailsProvider]
     DB[(PostgreSQL)]
   end
-  subgraph external [Externos]
+  subgraph external [External]
     EF[Etherfuse API]
     HZN[Horizon / RPC]
     SOR[Soroban contract]
@@ -49,92 +49,92 @@ flowchart LR
   DUP --> SOR
 ```
 
-### 2.1 Módulos sugeridos
+### 2.1 Suggested modules
 
-1. **`api/`** — rotas, validação de input, serialização, rate limit.  
-2. **`domain/duplicata/`** — regras de negócio, IDs internos, ligação a eventos do indexador.  
-3. **`integrations/rails/`** — interface `RailsProvider` + implementação `EtherfuseRailsProvider`.  
-4. **`integrations/stellar/`** — leitura Horizon/RPC, preparação de XDR (se o backend assinar ou só simular).  
-5. **`workers/`** — fila (ex.: BullMQ + Redis) para webhooks, reconciliação de estado de ordem.  
-6. **`indexer/`** — já existe esqueleto; v1 pode consumir eventos e escrever na mesma BD via API interna ou lib partilhada.
-
----
-
-## 3. Stack recomendada (decisão provisória)
-
-| Camada | Escolha sugerida | Motivo |
-|--------|------------------|--------|
-| Runtime | Node.js 22 LTS | Alinha com `indexer/` existente |
-| Framework | Fastify ou Hono | Performance, tipagem TS |
-| ORM | Drizzle ou Prisma | Migrações e type-safety |
-| Auth | JWT (RS256) servido pelo próprio backend + refresh opcional v2 | Simplicidade v1 |
-| Fila | Redis + BullMQ | Webhooks e retries |
-| Deploy | Docker + compose dev | Paridade local/CI |
-
-**ADR obrigatório:** gravar em `docs/notes/` ou `DECISIONS.md` na raiz do backend a escolha final de framework e ORM após spike de 1 dia.
+1. **`api/`** — routes, input validation, serialization, rate limiting.  
+2. **`domain/duplicata/`** — business rules, internal IDs, link to indexer events.  
+3. **`integrations/rails/`** — `RailsProvider` interface + `EtherfuseRailsProvider` implementation.  
+4. **`integrations/stellar/`** — Horizon/RPC reads, XDR preparation (if the backend signs or only simulates).  
+5. **`workers/`** — queue (e.g. BullMQ + Redis) for webhooks, order-state reconciliation.  
+6. **`indexer/`** — skeleton already exists; v1 may consume events and write to the same DB via internal API or shared library.
 
 ---
 
-## 4. Modelo de dados (rascunho v1)
+## 3. Recommended stack (provisional decision)
 
-Entidades mínimas:
+| Layer | Suggested choice | Rationale |
+|-------|------------------|-----------|
+| Runtime | Node.js 22 LTS | Matches existing `indexer/` |
+| Framework | Fastify or Hono | Performance, TS typing |
+| ORM | Drizzle or Prisma | Migrations and type-safety |
+| Auth | JWT (RS256) from this backend + optional refresh v2 | v1 simplicity |
+| Queue | Redis + BullMQ | Webhooks and retries |
+| Deploy | Docker + dev compose | Local/CI parity |
 
-- **`users`** — id externo (wallet `G...` ou subject OIDC futuro), created_at.  
-- **`duplicatas`** — campos espelhados do contrato + `chain_duplicata_id` + `contract_address` + `network` (testnet/mainnet).  
-- **`ramp_quotes`** — provider (`etherfuse`), payload request/response JSON, `expires_at`, status.  
-- **`ramp_orders`** — `quote_id`, `external_order_id`, estado, montantes, `user_id`.  
-- **`chain_events`** — cursor do indexador, `tx_hash`, payload normalizado.
-
-Índices: `(external_order_id, provider)`, `(user_id, created_at)`.
-
----
-
-## 5. Integração Etherfuse (fases técnicas)
-
-### Fase 0 — Spike (1–2 dias)
-
-- Criar organização sandbox; gerar API key.  
-- Script `curl` ou `scripts/etherfuse-smoke.ts`: autenticação → quote de teste → order de teste (conforme doc).  
-- Documentar no `README` ou `docs/notes` os **HTTP status** e erros típicos.
-
-### Fase 1 — Cliente HTTP interno
-
-- Cliente com: timeouts, retries exponenciais (429/5xx), **redaction** de secrets em logs.  
-- Tipos TypeScript gerados a partir de OpenAPI Etherfuse **se** disponível; caso contrário tipos manuais mínimos.
-
-### Fase 2 — Endpoints Dupply
-
-Exemplos de rotas (nomes ilustrativos):
-
-- `POST /v1/ramp/quotes` — corpo: par de moedas, montante; resposta: id interno + dados Etherfuse.  
-- `POST /v1/ramp/orders` — corpo: `quote_id` + confirmação; resposta: estado inicial.  
-- `GET /v1/ramp/orders/:id` — estado consolidado (BD + refresh opcional na API).  
-
-### Fase 3 — Webhooks
-
-- Endpoint `POST /v1/webhooks/etherfuse` com verificação de assinatura (conforme doc).  
-- Worker atualiza `ramp_orders` e emite notificação interna (websocket v2).
-
-### Fase 4 — Ligação à duplicata
-
-- Ao emitir `issue` on-chain (feito pelo cliente ou por transação preparada pelo backend), gravar `duplicata_id` e `ramp_order_id` na mesma transação DB (consistência eventual).
+**Required ADR:** record the final framework and ORM choice in `docs/notes/` or root `DECISIONS.md` after a one-day spike.
 
 ---
 
-## 6. Integração “anchor SEP-24” (fase posterior, desenho)
+## 4. Data model (v1 draft)
 
-Quando for necessário um anchor do **Anchor Directory**:
+Minimum entities:
 
-1. Resolver `HOME_DOMAIN` e `stellar.toml` (SEP-1).  
-2. Implementar cliente **SEP-10** (challenge → sign → JWT).  
-3. Abrir fluxo **SEP-24** (deposit/withdraw) conforme [Wallet SEP-24](https://developers.stellar.org/docs/build/apps/wallet/sep24).  
-4. Opcional: UI redirect para URL hosted do anchor (o frontend Dupply, quando existir, abre webview ou browser).
+- **`users`** — external id (wallet `G...` or future OIDC subject), `created_at`.  
+- **`duplicatas`** — fields mirroring the contract + `chain_duplicata_id` + `contract_address` + `network` (testnet/mainnet).  
+- **`ramp_quotes`** — provider (`etherfuse`), request/response JSON payload, `expires_at`, status.  
+- **`ramp_orders`** — `quote_id`, `external_order_id`, state, amounts, `user_id`.  
+- **`chain_events`** — indexer cursor, `tx_hash`, normalized payload.
 
-Manter `Sep24RailsProvider` atrás da mesma interface `RailsProvider`.
+Indexes: `(external_order_id, provider)`, `(user_id, created_at)`.
 
 ---
 
-## 7. Variáveis de ambiente (lista mínima)
+## 5. Etherfuse integration (technical phases)
+
+### Phase 0 — Spike (1–2 days)
+
+- Create sandbox organization; generate API key.  
+- `curl` script or `scripts/etherfuse-smoke.ts`: authentication → test quote → test order (per docs).  
+- Document typical **HTTP status** codes and errors in `README` or `docs/notes`.
+
+### Phase 1 — Internal HTTP client
+
+- Client with: timeouts, exponential retries (429/5xx), **secret redaction** in logs.  
+- TypeScript types generated from Etherfuse OpenAPI **if** available; otherwise minimal hand-written types.
+
+### Phase 2 — Dupply endpoints
+
+Illustrative route names:
+
+- `POST /v1/ramp/quotes` — body: currency pair, amount; response: internal id + Etherfuse data.  
+- `POST /v1/ramp/orders` — body: `quote_id` + confirmation; response: initial state.  
+- `GET /v1/ramp/orders/:id` — consolidated state (DB + optional refresh from API).
+
+### Phase 3 — Webhooks
+
+- `POST /v1/webhooks/etherfuse` with signature verification (per docs).  
+- Worker updates `ramp_orders` and emits internal notification (websocket v2).
+
+### Phase 4 — Link to duplicata
+
+- When `issue` is executed on chain (by client or by a backend-prepared transaction), store `duplicata_id` and `ramp_order_id` in the same DB transaction (eventual consistency).
+
+---
+
+## 6. “SEP-24 anchor” integration (later phase, design)
+
+When an anchor from the **Anchor Directory** is required:
+
+1. Resolve `HOME_DOMAIN` and `stellar.toml` (SEP-1).  
+2. Implement **SEP-10** client (challenge → sign → JWT).  
+3. Open **SEP-24** flow (deposit/withdraw) per [Wallet SEP-24](https://developers.stellar.org/docs/build/apps/wallet/sep24).  
+4. Optional: UI redirect to anchor-hosted URL (Dupply frontend, when it exists, opens webview or browser).
+
+Keep `Sep24RailsProvider` behind the same `RailsProvider` interface.
+
+---
+
+## 7. Environment variables (minimum list)
 
 ```bash
 # API
@@ -155,37 +155,37 @@ ETHERFUSE_ORG_ID=...
 ETHERFUSE_WEBHOOK_SECRET=...
 ```
 
-**Nota:** o `CONTRACT_ID` acima deve ser atualizado se houver novo deploy; a fonte de verdade continua a ser `DEPLOYMENT-testnet.md`.
+**Note:** update the `CONTRACT_ID` above if redeployed; the source of truth remains `DEPLOYMENT-testnet.md`.
 
 ---
 
-## 8. Testes e critérios de aceitação v1
+## 8. Tests and v1 acceptance criteria
 
-1. **Unitários:** `RailsProvider` com mock HTTP (nock/msw).  
-2. **Integração:** testes contra sandbox Etherfuse em CI opcional (secrets no GitHub Actions).  
-3. **Contrato:** testes Rust já existentes no crate; pipeline CI a correr `cargo test` no path do contrato.  
-4. **Aceitação manual:** checklist em `docs/notes/` com screenshots ou `curl` de cada rota.
-
----
-
-## 9. Riscos e rollback
-
-| Risco | Mitigação | Rollback |
-|-------|-----------|----------|
-| Mudança de API Etherfuse | Versão client + monitorização | Feature flag `RAILS_PROVIDER=none` |
-| Custos / limites de rate | Cache de quotes curtos, idempotência | Desligar rota pública |
-| Segurança de webhook | Assinatura + replay window | Revogar secret |
+1. **Unit:** `RailsProvider` with HTTP mock (nock/msw).  
+2. **Integration:** optional CI tests against Etherfuse sandbox (secrets in GitHub Actions).  
+3. **Contract:** existing Rust tests in the crate; CI runs `cargo test` on the contract path.  
+4. **Manual acceptance:** checklist in `docs/notes/` with screenshots or `curl` for each route.
 
 ---
 
-## 10. Documentação cruzada
+## 9. Risks and rollback
 
-- Pesquisa Stellar SEP / anchors: `docs/research/2026-05-16_stellar-anchors-seps-and-directory.md`  
-- Pesquisa Etherfuse: `docs/research/2026-05-16_etherfuse-stellar-fx-api.md`
+| Risk | Mitigation | Rollback |
+|------|------------|----------|
+| Etherfuse API changes | Versioned client + monitoring | Feature flag `RAILS_PROVIDER=none` |
+| Cost / rate limits | Short quote cache, idempotency | Disable public route |
+| Webhook security | Signature + replay window | Revoke secret |
 
 ---
 
-## Referências
+## 10. Cross-documentation
+
+- Stellar SEP / anchor research: `docs/research/2026-05-16_stellar-anchors-seps-and-directory.md`  
+- Etherfuse research: `docs/research/2026-05-16_etherfuse-stellar-fx-api.md`
+
+---
+
+## References
 
 1. Stellar — SEP-24 wallet — https://developers.stellar.org/docs/build/apps/wallet/sep24  
 2. Stellar — Anchor Platform SEP-24 — https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/getting-started  
