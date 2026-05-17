@@ -46,6 +46,16 @@ function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
 
+export type RampAssetRow = {
+  symbol: string;
+  identifier: string;
+  currency?: string;
+};
+
+export type RampAssetsResponse = {
+  assets: RampAssetRow[];
+};
+
 export class EtherfuseClient {
   constructor(
     private readonly baseUrl: string,
@@ -57,6 +67,61 @@ export class EtherfuseClient {
     const base = this.baseUrl.replace(/\/$/, "");
     const p = path.startsWith("/") ? path : `/${path}`;
     return `${base}${p}`;
+  }
+
+  /**
+   * GET /ramp/assets — required query: blockchain, currency (fiat hint, lowercase), wallet.
+   * @see https://docs.etherfuse.com/api-reference/assets/get-rampable-assets
+   */
+  async getRampAssets(blockchain: string, currency: string, wallet: string): Promise<RampAssetsResponse> {
+    const params = new URLSearchParams({
+      blockchain,
+      currency: currency.toLowerCase(),
+      wallet,
+    });
+    return this.getJson<RampAssetsResponse>(`/ramp/assets?${params.toString()}`);
+  }
+
+  async getJson<T>(pathWithQuery: string): Promise<T> {
+    const timeoutMs = this.options.timeoutMs ?? 30_000;
+    const maxRetries = this.options.maxRetries ?? 3;
+    let attempt = 0;
+    let lastErr: unknown;
+    while (attempt <= maxRetries) {
+      const controller = new AbortController();
+      const t = setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const res = await fetch(this.url(pathWithQuery), {
+          method: "GET",
+          headers: {
+            Authorization: this.apiKey,
+          },
+          signal: controller.signal,
+        });
+        const text = await res.text();
+        if (res.ok) {
+          return JSON.parse(text) as T;
+        }
+        if (res.status === 429 || res.status >= 500) {
+          lastErr = new EtherfuseHttpError(`Etherfuse ${res.status}`, res.status, text);
+          const backoff = Math.min(2000, 200 * 2 ** attempt);
+          attempt += 1;
+          if (attempt > maxRetries) break;
+          await sleep(backoff);
+          continue;
+        }
+        throw new EtherfuseHttpError(`Etherfuse ${res.status}`, res.status, text);
+      } catch (e) {
+        if (e instanceof EtherfuseHttpError) throw e;
+        lastErr = e;
+        attempt += 1;
+        if (attempt > maxRetries) break;
+        await sleep(200 * 2 ** attempt);
+      } finally {
+        clearTimeout(t);
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
   }
 
   async postJson<T>(path: string, body: unknown): Promise<T> {

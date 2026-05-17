@@ -11,6 +11,7 @@
 | Linguagem | TypeScript (ESM, `NodeNext`) | Alinhado com manutenção e tipos Zod |
 | Persistência (dev) | SQLite + Drizzle ORM | Zero infra local; migrações versionadas em `api/drizzle/` |
 | Rampa | Cliente HTTP Etherfuse | Documentação oficial [docs.etherfuse.com](https://docs.etherfuse.com/overview); auth **sem** prefixo `Bearer` |
+| Duplicatas | `@stellar/stellar-sdk` contract client gerado (`stellar contract bindings`) | `simulate` + `toXDR()` para assinatura pelo emitente; confirmação via `getTransaction` |
 | Auth API | Header `X-Dupply-Api-Key` | Evita colisão semântica com `Authorization` usado pela Etherfuse |
 | Webhook | `canonicalize` + HMAC-SHA256 | Conforme [Verifying Webhooks](https://docs.etherfuse.com/guides/verifying-webhooks); `require` CJS por interoperabilidade de tipos TS |
 

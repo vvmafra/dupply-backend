@@ -3,6 +3,7 @@ import Fastify from "fastify";
 import { loadConfig } from "./config.js";
 import { createDb, runMigrations } from "./db/index.js";
 import { requireDupplyApiKey } from "./plugins/dupply-auth.js";
+import { registerDuplicataRoutes } from "./routes/v1/duplicatas.js";
 import { registerRampRoutes } from "./routes/v1/ramp.js";
 import { registerEtherfuseWebhook } from "./routes/v1/webhook-etherfuse.js";
 
@@ -23,6 +24,7 @@ async function main(): Promise<void> {
     async (scope) => {
       scope.addHook("preHandler", requireDupplyApiKey(config));
       await registerRampRoutes(scope, { db, config });
+      await registerDuplicataRoutes(scope, { db, config });
     },
     { prefix: "" },
   );

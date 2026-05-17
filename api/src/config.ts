@@ -9,6 +9,9 @@ const envSchema = z.object({
   ETHERFUSE_BASE_URL: z.string().url().default("https://api.sand.etherfuse.com"),
   ETHERFUSE_API_KEY: z.string().optional(),
   ETHERFUSE_WEBHOOK_SECRET: z.string().optional(),
+  STELLAR_NETWORK: z.enum(["testnet", "mainnet", "futurenet"]).default("testnet"),
+  SOROBAN_RPC_URL: z.string().url().default("https://soroban-testnet.stellar.org"),
+  DUPPLY_REGISTRY_CONTRACT_ID: z.string().optional(),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;

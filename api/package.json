@@ -16,7 +16,10 @@
     "node": ">=20"
   },
   "dependencies": {
+    "@stellar/stellar-base": "^14.0.0",
+    "@stellar/stellar-sdk": "^14.6.1",
     "better-sqlite3": "^11.10.0",
+    "buffer": "^6.0.3",
     "canonicalize": "^2.1.0",
     "drizzle-orm": "^0.44.2",
     "fastify": "^5.2.2",

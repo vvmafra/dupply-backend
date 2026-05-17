@@ -1,4 +1,4 @@
-import { index, sqliteTable, text } from "drizzle-orm/sqlite-core";
+import { index, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 
 export const rampQuotes = sqliteTable(
   "ramp_quotes",
@@ -34,5 +34,45 @@ export const rampOrders = sqliteTable(
   (t) => [
     index("ramp_orders_external_order_id_idx").on(t.externalOrderId),
     index("ramp_orders_ramp_quote_id_idx").on(t.rampQuoteId),
+  ],
+);
+
+export const duplicataDrafts = sqliteTable("duplicata_drafts", {
+  id: text("id").primaryKey(),
+  issuerPublicKey: text("issuer_public_key").notNull(),
+  status: text("status").notNull().default("draft"),
+  payloadJson: text("payload_json").notNull(),
+  unsignedXdr: text("unsigned_xdr"),
+  assembledJson: text("assembled_json"),
+  simulationLedger: text("simulation_ledger"),
+  predictedChainId: text("predicted_chain_id"),
+  lastError: text("last_error"),
+  createdAtMs: text("created_at_ms").notNull(),
+  updatedAtMs: text("updated_at_ms").notNull(),
+});
+
+export const duplicataChainRecords = sqliteTable(
+  "duplicata_chain_records",
+  {
+    id: text("id").primaryKey(),
+    draftId: text("draft_id")
+      .notNull()
+      .references(() => duplicataDrafts.id),
+    network: text("network").notNull(),
+    contractId: text("contract_id").notNull(),
+    chainDuplicataId: text("chain_duplicata_id").notNull(),
+    txHash: text("tx_hash").notNull(),
+    ledger: text("ledger"),
+    issuedAtLedger: text("issued_at_ledger"),
+    createdAtMs: text("created_at_ms").notNull(),
+  },
+  (t) => [
+    uniqueIndex("duplicata_chain_unique_on_chain_id").on(
+      t.chainDuplicataId,
+      t.contractId,
+      t.network,
+    ),
+    index("duplicata_chain_tx_hash_idx").on(t.txHash),
+    index("duplicata_chain_draft_id_idx").on(t.draftId),
   ],
 );
