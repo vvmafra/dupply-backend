@@ -50,9 +50,9 @@ cargo test -p duplicata-registry
 stellar contract build
 ```
 
-- Rust toolchain: [rust-toolchain.toml](contracts/duplicata-registry/rust-toolchain.toml) (pin required by `stellar contract build` CLI).
-- Release Wasm: `contracts/duplicata-registry/target/wasm32v1-none/release/duplicata_registry.wasm`
-- Testnet deploy (optional): [scripts/deploy-testnet.sh](contracts/duplicata-registry/scripts/deploy-testnet.sh) and [DEPLOYMENT-testnet.md](contracts/duplicata-registry/DEPLOYMENT-testnet.md).
+- **Rust:** [rust-toolchain.toml](contracts/duplicata-registry/rust-toolchain.toml) pins **`1.92.0`** and `wasm32v1-none` (required by `stellar contract build`).
+- **Wasm:** `contracts/duplicata-registry/target/wasm32v1-none/release/duplicata_registry.wasm`
+- **Testnet deploy (optional):** [scripts/deploy-testnet.sh](contracts/duplicata-registry/scripts/deploy-testnet.sh) — needs `STELLAR_IDENTITY` and the Wasm already built; see [DEPLOYMENT-testnet.md](contracts/duplicata-registry/DEPLOYMENT-testnet.md).
 
 Product spec (cross-reference to frontend): `dupply-frontend/docs/notes/2026-05-15_stellar-duplicata-master-implementation-guide.md`.
 
