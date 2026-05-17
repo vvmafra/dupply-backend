@@ -1,0 +1,22 @@
+import { z } from "zod";
+
+const envSchema = z.object({
+  NODE_ENV: z.string().optional().default("development"),
+  PORT: z.coerce.number().int().positive().default(8080),
+  HOST: z.string().default("0.0.0.0"),
+  DATABASE_URL: z.string().default("file:./data/dupply.db"),
+  DUPPLY_API_KEY: z.string().min(1).optional(),
+  ETHERFUSE_BASE_URL: z.string().url().default("https://api.sand.etherfuse.com"),
+  ETHERFUSE_API_KEY: z.string().optional(),
+  ETHERFUSE_WEBHOOK_SECRET: z.string().optional(),
+});
+
+export type AppConfig = z.infer<typeof envSchema>;
+
+export function loadConfig(env: NodeJS.ProcessEnv = process.env): AppConfig {
+  const parsed = envSchema.safeParse(env);
+  if (!parsed.success) {
+    throw new Error(`Invalid env: ${parsed.error.message}`);
+  }
+  return parsed.data;
+}
