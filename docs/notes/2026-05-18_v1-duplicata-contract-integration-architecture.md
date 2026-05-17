@@ -1,258 +1,261 @@
-# Arquitetura v1 (restante): criação de duplicatas integrada ao contrato Soroban
+# v1 architecture (remainder): duplicata creation integrated with the Soroban contract
 
-**Data:** 2026-05-18  
-**Âmbito:** planear apenas o **processo básico de criação** de duplicatas alinhado ao contrato `DuplicataRegistry`, **sem** expandir rampa/Etherfuse nem administração completa do registry.  
-**Implementação:** ver código em `api/` — rotas `POST /v1/duplicatas`, `POST /v1/duplicatas/:id/confirm`, `GET /v1/duplicatas/:id`, `GET /v1/duplicatas/on-chain/:chainId`, bindings em `api/src/generated/duplicata-registry-contract.ts`.  
-**Contrato de referência:** `contracts/duplicata-registry/contracts/duplicata-registry/src/` (`issue`, `IssuePayload`, `DuplicataIssued`, erros em `RegistryError`).  
-**Documentação oficial Stellar / Soroban:** [Smart contracts — docs](https://developers.stellar.org/docs/build/smart-contracts), [RPC methods](https://developers.stellar.org/docs/data/apis/rpc/api-reference/methods), [Assemble transaction (Horizon legacy patterns)](https://developers.stellar.org/docs/build/guides/transactions) — para invocações Soroban usar **Soroban RPC** (`simulateTransaction`, `sendTransaction`).
-
----
-
-## 1. Objetivo de produto (v1 “mínimo viável”)
-
-Permitir que um **emitente autorizado** (conta Stellar clássica `G...` mapeada para `Address` no Soroban) **registe uma duplicata** no registry já deployado, com:
-
-1. **Validação** off-chain espelhando invariantes do contrato (evitar XDR inútil e taxas falhadas).  
-2. **Montagem** da invocação `issue(issuer, payload)` com `IssuePayload` coerente com `types.rs`.  
-3. **Assinatura** pela chave do emitente (o contrato exige `issuer.require_auth()` em `issue` — ver `lib.rs`).  
-4. **Submissão** à rede e **persistência** do estado em BD para consulta pela aplicação.  
-5. **Correlação** opcional com o indexador existente (`DuplicataIssued`) para auditoria.
-
-**Fora de escopo v1 (explícito):** `initialize` / `set_admin` / `set_issuer_allowed` via API pública (operações de admin continuam CLI ou rota interna muito restrita); armazenamento de **ficheiros** (PDFs de NF); gestão de sacado off-chain além do `sacado_commitment`; assinatura custodial no servidor.
+**Date:** 2026-05-18  
+**Scope:** plan only the **basic creation flow** for duplicatas aligned with the `DuplicataRegistry` contract, **without** expanding ramp/Etherfuse or full registry administration.  
+**Implementation:** see code under `api/` — routes `POST /v1/duplicatas`, `POST /v1/duplicatas/:id/confirm`, `GET /v1/duplicatas/:id`, `GET /v1/duplicatas/on-chain/:chainId`, bindings in `api/src/generated/duplicata-registry-contract.ts`.  
+**Contract reference:** `contracts/duplicata-registry/contracts/duplicata-registry/src/` (`issue`, `IssuePayload`, `DuplicataIssued`, errors in `RegistryError`).  
+**Official Stellar / Soroban docs:** [Smart contracts — docs](https://developers.stellar.org/docs/build/smart-contracts), [RPC methods](https://developers.stellar.org/docs/data/apis/rpc/api-reference/methods), [Assemble transaction (Horizon legacy patterns)](https://developers.stellar.org/docs/build/guides/transactions) — for Soroban invocations use **Soroban RPC** (`simulateTransaction`, `sendTransaction`).
 
 ---
 
-## 2. Restrições impostas pelo contrato (não negociáveis)
+## 1. Product goal (v1 “minimum viable”)
 
-| Regra | Origem | Implicação para o backend |
-|--------|--------|---------------------------|
-| `issuer.require_auth()` | `issue` | O **mesmo** `issuer` da chamada tem de **assinar** a transação Soroban (ou autorizar via custom account rules). O backend **não** pode “emitir por” o cliente sem a respetiva chave ou passarelle MPC acordada. |
-| Allowlist | `is_issuer_allowed` | Antes de montar TX, o backend pode ler o contrato via RPC (`simulateTransaction` read-only ou `get_duplicata`-style helpers se expostos) para falhar cedo com `IssuerNotAllowed`. |
-| `IssuePayload` | `types.rs` | O corpo HTTP da API deve mapear 1:1 para enums e campos (nomes estáveis para o front futuro). Hashes são `BytesN<32>` — **32 bytes fixos** (tipicamente SHA-256 de strings canónicas definidas pela Dupply). |
-| Invariantes | `validate_payload` | Duplicar validação no servidor **antes** de `simulateTransaction` reduz custo e melhora mensagens (`InvalidAmounts`, `InvalidDates`, `FraudDeclarationsRequired`, `InvalidDiscountFlags`). |
+Allow an **authorized issuer** (classic Stellar account `G...` mapped to Soroban `Address`) to **register a duplicata** on the deployed registry, with:
 
-Referência de domínio legível no repo: o README do crate aponta para tipos no frontend (`duplicata.types.ts`) — manter **contrato + types TS** como fonte de verdade dupla até existir pacote partilhado.
+1. **Off-chain validation** mirroring contract invariants (avoid useless XDR and failed fees).  
+2. **Assembly** of the `issue(issuer, payload)` invocation with `IssuePayload` consistent with `types.rs`.  
+3. **Signing** with the issuer key (the contract requires `issuer.require_auth()` in `issue` — see `lib.rs`).  
+4. **Network submission** and **DB persistence** of state for app queries.  
+5. **Optional correlation** with the existing indexer (`DuplicataIssued`) for audit.
+
+**Explicitly out of scope v1:** `initialize` / `set_admin` / `set_issuer_allowed` via public API (admin remains CLI or a tightly restricted internal route); **file** storage (invoice PDFs); drawee off-chain management beyond `sacado_commitment`; custodial signing on the server.
 
 ---
 
-## 3. Modelo de integração recomendado (v1): “backend orquestra, carteira assina”
+## 2. Contract-imposed rules (non-negotiable)
+
+| Rule | Source | Backend implication |
+|------|--------|---------------------|
+| `issuer.require_auth()` | `issue` | The **same** `issuer` as the call must **sign** the Soroban transaction (or authorize via custom account rules). The backend **cannot** “issue for” the client without that key or an agreed MPC pass-through. |
+| Allowlist | `is_issuer_allowed` | Before assembling the TX, the backend may read the contract via RPC (`simulateTransaction` read-only or generated read helpers if exposed) to fail early with `IssuerNotAllowed`. |
+| `IssuePayload` | `types.rs` | The HTTP body must map 1:1 to enums and fields (stable names for the future frontend). Hashes are `BytesN<32>` — **32 fixed bytes** (typically SHA-256 of Dupply-defined canonical strings). |
+| Invariants | `validate_payload` | Duplicating validation on the server **before** `simulateTransaction` reduces cost and improves messages (`InvalidAmounts`, `InvalidDates`, `FraudDeclarationsRequired`, `InvalidDiscountFlags`). |
+
+Human-readable domain reference in the repo: the crate README points to frontend types (`duplicata.types.ts`) — keep **contract + TS types** as dual source of truth until a shared package exists.
+
+---
+
+## 3. Recommended v1 integration model: “backend orchestrates, wallet signs”
 
 ```mermaid
 sequenceDiagram
-  participant U as Emitente (wallet)
+  participant U as Issuer (wallet)
   participant API as Dupply API
   participant RPC as Soroban RPC
   participant C as DuplicataRegistry
 
-  U->>API: POST /v1/duplicatas (dados + issuer pubkey)
-  API->>API: validar + hashes + allowlist (RPC read)
+  U->>API: POST /v1/duplicatas (data + issuer pubkey)
+  API->>API: validate + hashes + allowlist (RPC read)
   API->>RPC: simulateTransaction (issue)
   RPC-->>API: footprint, auth entries, result
-  API->>API: persistir draft + simulation footprint
+  API->>API: persist draft + simulation footprint
   API-->>U: { duplicataDraftId, unsignedXdr, chainPreview }
 
-  U->>U: assinar XDR
+  U->>U: sign XDR
   U->>RPC: sendTransaction (signed XDR)
   RPC-->>U: tx hash / status
 
-  U->>API: POST /v1/duplicatas/:id/confirm (txHash) opcional
+  U->>API: POST /v1/duplicatas/:id/confirm (txHash) optional
   API->>RPC: getTransaction / poll
-  API->>API: atualizar estado + chain id
+  API->>API: update state + chain id
   API-->>U: { chainDuplicataId, ... }
 
-  Note over API,C: Alternativa: confirmação só via indexador/webhook interno
+  Note over API,C: Alternative: confirmation only via indexer / internal webhook
 ```
 
-**Porque este modelo:** respeita `require_auth` do emitente, minimiza superfície de custódia e alinha com práticas comuns Stellar ([Stellar transaction lifecycle](https://developers.stellar.org/docs/learn/fundamentals/stellar-data-structures/operations-and-transactions)).
+**Why this model:** respects issuer `require_auth`, minimizes custody surface, and aligns with common Stellar practice ([Stellar transaction lifecycle](https://developers.stellar.org/docs/learn/fundamentals/stellar-data-structures/operations-and-transactions)).
 
-**Alternativa v1.1 (opcional):** se no futuro o emitente usar **smart wallet** (`C...`) com políticas, o fluxo de assinatura muda; o payload `issue` mantém-se — rever **SEP-45** / auth de contas contrato (já mencionado em `docs/research/2026-05-16_stellar-sep10-sep24-deep-dive.md`).
-
----
-
-## 4. Camadas no pacote `api/`
-
-| Módulo | Responsabilidade |
-|--------|------------------|
-| `domain/duplicata/` | Validação de negócio, normalização de datas para unix, regras de hashes, mapeamento DTO ↔ `IssuePayload` lógico. |
-| `integrations/stellar/` | Cliente RPC (`fetch`/`rpc.Server`), leitura de contract spec (WASM id / contract id), `simulateTransaction`, preparação de `Operation.invokeContract`, decodificação de erros Soroban. |
-| `integrations/registry/` | Funções de alto nível: `assertIssuerAllowed`, `buildIssueTransaction`, `parseIssueResult`. |
-| `routes/v1/duplicatas.ts` | HTTP + Zod; **não** expor secrets. |
-| `db/schema` (extensão) | Tabelas `duplicata_drafts` / `duplicata_chain_records` (nomes ilustrativos). |
-
-Manter **rampa** (`ramp_*`) isolada: uma `duplicata_chain_record` pode referenciar opcionalmente `ramp_order_id` numa fase posterior (não v1 obrigatório).
+**Optional v1.1:** if the issuer later uses a **`C...` smart wallet** with policies, the signing flow changes; the `issue` payload stays the same — revisit **SEP-45** / contract-account auth (already mentioned in `docs/research/2026-05-16_stellar-sep10-sep24-deep-dive.md`).
 
 ---
 
-## 5. Modelo de dados (SQLite / Postgres — mesmo schema Drizzle)
+## 4. Layers in the `api/` package
+
+| Module | Responsibility |
+|--------|----------------|
+| `domain/duplicata/` | Business validation, date normalization to unix, hash rules, DTO ↔ logical `IssuePayload` mapping. |
+| `integrations/stellar/` | RPC client (`fetch` / `rpc.Server`), contract spec (WASM id / contract id), `simulateTransaction`, `Operation.invokeContract` prep, Soroban error decoding. |
+| `integrations/registry/` | High-level helpers: `assertIssuerAllowed`, `buildIssueTransaction`, `parseIssueResult`. |
+| `routes/v1/duplicatas.ts` | HTTP + Zod; **do not** expose secrets. |
+| `db/schema` (extension) | Tables `duplicata_drafts` / `duplicata_chain_records` (illustrative names). |
+
+Keep **ramp** (`ramp_*`) isolated: a `duplicata_chain_record` may optionally reference `ramp_order_id` in a later phase (not mandatory in v1).
+
+---
+
+## 5. Data model (SQLite / Postgres — same Drizzle schema)
 
 ### 5.1 `duplicata_drafts`
 
-Estado antes da confirmação on-chain.
+State before on-chain confirmation.
 
-| Coluna | Tipo | Notas |
+| Column | Type | Notes |
 |--------|------|--------|
-| `id` | UUID | PK interna Dupply. |
-| `issuer_public_key` | TEXT | Conta clássica `G...` (string); conversão para `Address` na montagem Soroban. |
+| `id` | UUID | Internal Dupply PK. |
+| `issuer_public_key` | TEXT | Classic account `G...` (string); convert to `Address` when assembling Soroban. |
 | `status` | TEXT | `draft` \| `simulated` \| `submitted` \| `confirmed` \| `failed`. |
-| `payload_json` | TEXT/JSON | Snapshot canónico enviado/recebido (sem PII em claro se política exigir só hashes). |
-| `unsigned_xdr` | TEXT nullable | Última versão simulada (pode expirar — ver TTL simulação). |
-| `simulation_ledger` | INT nullable | Para debugging. |
-| `last_error` | TEXT nullable | Mensagem amigável + código contrato se parseável. |
-| `created_at` / `updated_at` | TIMESTAMP | Auditoria. |
+| `payload_json` | TEXT/JSON | Canonical snapshot sent/received (no raw PII if policy requires hashes only). |
+| `unsigned_xdr` | TEXT nullable | Last simulated version (may expire — see simulation TTL). |
+| `simulation_ledger` | INT nullable | Debugging. |
+| `last_error` | TEXT nullable | Friendly message + contract code if parseable. |
+| `created_at` / `updated_at` | TIMESTAMP | Audit. |
 
-### 5.2 `duplicata_chain_records` (ou colunas extra no draft após confirmação)
+### 5.2 `duplicata_chain_records` (or extra columns on draft after confirmation)
 
-| Coluna | Tipo | Notas |
+| Column | Type | Notes |
 |--------|------|--------|
 | `draft_id` | UUID FK | |
 | `network` | TEXT | `testnet` / `futurenet` / `mainnet`. |
-| `contract_id` | TEXT | Mesmo conceito que `DUPPLY_REGISTRY_CONTRACT_ID` em env. |
-| `chain_duplicata_id` | TEXT | `u64` serializado como string (evitar overflow JS). |
+| `contract_id` | TEXT | Same concept as `DUPPLY_REGISTRY_CONTRACT_ID` in env. |
+| `chain_duplicata_id` | TEXT | `u64` serialized as string (avoid JS overflow). |
 | `tx_hash` | TEXT | |
 | `ledger` | INT nullable | |
-| `issued_at_ledger` | INT nullable | Timestamp ledger se disponível no evento. |
+| `issued_at_ledger` | INT nullable | Ledger timestamp if available from event. |
 
-**Índices:** `(tx_hash)`, `(chain_duplicata_id, contract_id, network)` único composto.
+**Indexes:** `(tx_hash)`, unique composite `(chain_duplicata_id, contract_id, network)`.
 
 ---
 
-## 6. Contrato de API HTTP (proposta)
+## 6. HTTP API contract (proposal)
 
-Todas as rotas abaixo sob o mesmo **`X-Dupply-Api-Key`** já usado em `/v1/ramp/*` (ou JWT v2 — fora do v1).
+All routes below use the same **`X-Dupply-Api-Key`** as `/v1/ramp/*` (or JWT in v2 — outside v1).
 
 ### 6.1 `POST /v1/duplicatas`
 
-**Entrada (exemplo lógico — campos alinhados a `IssuePayload`):**
+**Input (logical example — field names match `CreateDuplicataBody` / `IssuePayload`):**
 
-- Enums: `tipo`, `doc_fiscal_tipo`, `comprovante_tipo`, `status_aceite_sacado` (valores estáveis `mercantil` \| `servico`, etc., mapeados para `u32`/`enum` Soroban no cliente SDK).  
-- Hashes: ou **hex de 64 chars** (32 bytes) **ou** strings a hashear com algoritmo documentado (preferir **hex fixo** no v1 para determinismo).  
-- Valores: `valor_face_centavos`, `valor_max_antecipacao_centavos` (inteiros).  
-- Datas: `data_emissao_unix`, `data_vencimento_unix`.  
-- Flags: `doc_fiscal_anexado`, `comprovante_anexado`, `declaracoes_antifraude_aceitas`, `discount_eligible`.  
-- `issuer_public_key`: `G...`.
+- `issuerPublicKey`: classic `G...`.  
+- `tipo`: `mercantil` \| `servico`.  
+- Hashes (64 hex chars = 32 bytes): `numeroDuplicataHash`, `numeroFaturaHash`, `docFiscalChaveHash`, `sacadoCommitment`.  
+- `docFiscalTipo`: `nfe` \| `nfce` \| `nfse` \| `outro`.  
+- `comprovanteTipo`: `entrega` \| `aceite` \| `prestacao_servico`.  
+- `statusAceiteSacado`: `aceito` \| `pendente` \| `recusado`.  
+- Amounts: `valorFaceCentavos`, `valorMaxAntecipacaoCentavos` (decimal strings, arbitrary precision).  
+- Dates: `dataEmissaoUnix`, `dataVencimentoUnix` (non-negative integers, unix seconds).  
+- Flags: `docFiscalAnexado`, `comprovanteAnexado`, `declaracoesAntifraudeAceitas`, `discountEligible`.
 
-**Processamento:**
+**Processing:**
 
-1. Validar corpo (Zod) + invariantes espelhadas de `validate_payload`.  
-2. Resolver `contract_id` e `rpc_url` de env.  
-3. Opcional: `is_issuer_allowed` via simulação ou leitura — se o SDK expuser `get_duplicata` apenas, usar simulação de leitura ou método gerado a partir do spec.  
-4. Construir `InvokeHostFunction` com argumentos Soroban (`issue` + `issuer` + `payload`).  
-5. `simulateTransaction` — guardar footprint e XDR não assinado.  
-6. Resposta: `{ id, status: "simulated", unsignedTransactionXdr, warnings[] }`.
+1. Validate body (Zod) + invariants mirroring `validate_payload`.  
+2. Resolve `contract_id` and RPC URL from env.  
+3. Optional: `is_issuer_allowed` via simulation or read — if the SDK only exposes `get_duplicata`, use read simulation or a method generated from spec.  
+4. Build `InvokeHostFunction` with Soroban args (`issue` + `issuer` + `payload`).  
+5. `simulateTransaction` — store footprint and unsigned XDR.  
+6. Response: `{ id, status: "simulated", unsignedTransactionXdr, warnings[] }`.
 
-**Erros HTTP:** `400` validação; `403` não allowlisted (pré-check); `502` RPC; `503` config em falta.
+**HTTP errors:** `400` validation; `403` not allowlisted (pre-check); `502` RPC; `503` missing config.
 
-### 6.2 `POST /v1/duplicatas/:id/signed` (opcional no v1)
+### 6.2 `POST /v1/duplicatas/:id/signed` (optional in v1)
 
-Se quiserem suportar **submissão pelo backend** (servidor com chave de canal / relayer só para fee, não para auth do issuer): **não cobre** `issuer.require_auth()` — em geral **não aplicável**. Preferir **não** implementar no v1.
+If you want **backend submission** (server channel key / relayer for fees only, not issuer auth): it does **not** satisfy `issuer.require_auth()` — generally **not applicable**. Prefer **not** implementing in v1.
 
 ### 6.3 `POST /v1/duplicatas/:id/confirm`
 
-Corpo: `{ txHash }`. O backend faz `getTransaction` / polling curto, extrai `returnValue` (id `u64`) ou lê evento `DuplicataIssued`, atualiza `duplicata_chain_records`. Idempotente por `tx_hash`.
+Body: `{ txHash }`. Backend runs `getTransaction` / short polling, extracts `returnValue` ( `u64` id) or reads `DuplicataIssued`, updates `duplicata_chain_records`. Idempotent by `tx_hash`.
 
 ### 6.4 `GET /v1/duplicatas/:id`
 
-Junta draft + registo on-chain (se existir). Opcionalmente enriquece com `get_duplicata` live.
+Joins draft + on-chain record (if any). Optionally enriches with live `get_duplicata`.
 
 ### 6.5 `GET /v1/duplicatas/on-chain/:chainId`
 
-Proxy de leitura (RPC) para debugging; pode ser `GET` com query `contract_id` se necessário.
+Read proxy (RPC) for debugging; may be `GET` with `contract_id` query if needed.
 
 ---
 
-## 7. Hashes e privacidade (`BytesN<32>`)
+## 7. Hashes and privacy (`BytesN<32>`)
 
-O contrato armazena apenas commitments. O plano Dupply deve **documentar num único sítio** (ex.: secção neste ficheiro ou `docs/research/`) a **canonização** das strings antes de SHA-256, por exemplo:
+The contract stores only commitments. The Dupply plan should **document in one place** (e.g. a section here or under `docs/research/`) **canonicalization** of strings before SHA-256, for example:
 
-- `numero_duplicata`: normalizar (trim, NFC), prefixo de versão `dupply:v1:duplicata_number:` + valor.  
-- Idem para `numero_fatura`, `doc_fiscal_chave`, `sacado` (ou identificador interno).
+- `numero_duplicata`: normalize (trim, NFC), version prefix `dupply:v1:duplicata_number:` + value.  
+- Same pattern for invoice number, fiscal doc key, drawee (or internal id).
 
-**Backend v1:** aceitar **já** `0x` ou hex de 64 caracteres para simplificar e evitar divergência cliente/servidor; campo opcional `hash_version` para evolução.
+**Backend v1:** accept **64-character hex** (or `0x` prefix) to simplify and avoid client/server divergence; optional `hashVersion` field for evolution.
 
 ---
 
-## 8. Stack técnica sugerida (Node, alinhada ao `api/` atual)
+## 8. Suggested technical stack (Node, aligned with current `api/`)
 
-| Peça | Escolha | Notas |
-|------|---------|--------|
-| SDK | `@stellar/stellar-sdk` (v13+ com Soroban) | Oficial SDF; ver [npm](https://www.npmjs.com/package/@stellar/stellar-sdk) e changelog para RPC Soroban. |
-| Contrato | Contract ID + **spec** gerado | Preferir `stellar contract bindings typescript` ou spec JSON commitado para tipos de `issue` — [CLI docs](https://developers.stellar.org/docs/tools/developer-tools/stellar-cli). |
-| RPC | `SOROBAN_RPC_URL` (testnet) | Mesma rede que `DEPLOYMENT-testnet.md`. |
+| Piece | Choice | Notes |
+|-------|--------|--------|
+| SDK | `@stellar/stellar-sdk` (v13+ with Soroban) | Official SDF; see [npm](https://www.npmjs.com/package/@stellar/stellar-sdk) and changelog for Soroban RPC. |
+| Contract | Contract ID + **generated spec** | Prefer `stellar contract bindings typescript` or committed JSON spec for `issue` types — [CLI docs](https://developers.stellar.org/docs/tools/developer-tools/stellar-cli). |
+| RPC | `SOROBAN_RPC_URL` (testnet) | Same network as `DEPLOYMENT-testnet.md`. |
 
-Variáveis de ambiente adicionais:
+Additional environment variables:
 
 ```bash
 DUPPLY_REGISTRY_CONTRACT_ID=...
 STELLAR_NETWORK=testnet
 SOROBAN_RPC_URL=https://soroban-testnet.stellar.org
-# opcional: HORIZON para histórico
+# optional: HORIZON for history
 STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org
 ```
 
 ---
 
-## 9. Indexador
+## 9. Indexer
 
-O `indexer/` atual pode, numa sub-fase:
+Current `indexer/` may, in a sub-phase:
 
-- consumir eventos `DuplicataIssued`;  
-- escrever `chain_duplicata_id` + `tx_hash` (se a BD for partilhada ou via fila interna).
+- consume `DuplicataIssued` events;  
+- write `chain_duplicata_id` + `tx_hash` (if DB is shared or via internal queue).
 
-**v1 mínimo:** confirmar só por `POST .../confirm` sem alterar o indexador reduz escopo.
-
----
-
-## 10. Segurança e compliance
-
-- **API key** Dupply não substitui assinatura on-chain do emitente.  
-- Não persistir **NF completa** em claro se não for necessário — só hashes + metadados.  
-- Rate limit por `issuer_public_key` + IP nas rotas de simulação (custo RPC).  
-- Logs sem XDR assinado nem chaves.
+**Minimal v1:** confirm only via `POST .../confirm` without changing the indexer reduces scope.
 
 ---
 
-## 11. Critérios de aceitação (v1 duplicata)
+## 10. Security and compliance
 
-1. Emitente na allowlist consegue obter `unsignedTransactionXdr` válido e submeter na testnet, resultando em `id` on-chain.  
-2. Emitente fora da allowlist recebe erro claro **antes** ou na simulação com mapeamento de `IssuerNotAllowed`.  
-3. Payload inválido (ex.: `declaracoes_antifraude_aceitas: false`) → `400` com código alinhado a `RegistryError`.  
-4. `POST /confirm` idempotente e grava `tx_hash` + `chain_duplicata_id`.  
-5. Testes automatizados: unitários validação + integração mock RPC (sem chaves reais em CI).
-
----
-
-## 12. Fases de implementação sugeridas
-
-| Fase | Entrega |
-|------|---------|
-| D1 | Schema Drizzle + rotas stub + Zod DTOs espelhando `IssuePayload`. |
-| D2 | Cliente RPC + simulação `issue` + persistência `duplicata_drafts`. |
-| D3 | `POST /confirm` + parsing de resultado / evento. |
-| D4 | Testes + endurecimento de erros + documentação `api/README.md`. |
-| D5 (opcional) | Indexador grava na mesma BD ou tópico interno. |
+- Dupply **API key** does not replace on-chain issuer signature.  
+- Do not persist full **invoice** in clear text if unnecessary — hashes + metadata only.  
+- Rate limit by `issuerPublicKey` + IP on simulation routes (RPC cost).  
+- Logs without signed XDR or keys.
 
 ---
 
-## 13. Riscos e mitigação
+## 11. Acceptance criteria (v1 duplicata)
 
-| Risco | Mitigação |
-|-------|-----------|
-| XDR / simulação expiram | Re-simular ao confirmar se `tx_hash` falhar; documentar TTL. |
-| Divergência enum JSON ↔ contrato | Spec gerado + testes de contrato Rust existentes como referência. |
-| JS `u64` | Usar `bigint` ou strings em toda a camada HTTP. |
+1. Allowlisted issuer obtains valid `unsignedTransactionXdr` and submits on testnet, yielding on-chain `id`.  
+2. Non-allowlisted issuer gets a clear error **before** or in simulation with `IssuerNotAllowed` mapping.  
+3. Invalid payload (e.g. `declaracoesAntifraudeAceitas: false`) → `400` with code aligned to `RegistryError`.  
+4. `POST /confirm` is idempotent and stores `tx_hash` + `chain_duplicata_id`.  
+5. Automated tests: unit validation + integration with mocked RPC (no real keys in CI).
+
+---
+
+## 12. Suggested implementation phases
+
+| Phase | Deliverable |
+|-------|-------------|
+| D1 | Drizzle schema + stub routes + Zod DTOs mirroring `IssuePayload`. |
+| D2 | RPC client + `issue` simulation + `duplicata_drafts` persistence. |
+| D3 | `POST /confirm` + result / event parsing. |
+| D4 | Tests + error hardening + `api/README.md` documentation. |
+| D5 (optional) | Indexer writes to same DB or internal topic. |
+
+---
+
+## 13. Risks and mitigation
+
+| Risk | Mitigation |
+|------|------------|
+| XDR / simulation expiry | Re-simulate on confirm if `tx_hash` fails; document TTL. |
+| JSON enum drift ↔ contract | Generated spec + existing Rust contract tests as reference. |
+| JS `u64` | Use `bigint` or strings across the HTTP layer. |
 
 ---
 
 ## 14. Rollback
 
-Feature flag `DUPLICATA_ROUTES_ENABLED=false` ou remover registo das rotas; dados em tabelas novas podem ser truncados sem afetar rampa nem contrato.
+Feature flag `DUPLICATA_ROUTES_ENABLED=false` or unregister routes; data in new tables can be truncated without affecting ramp or contract.
 
 ---
 
-## Referências
+## References
 
 1. Stellar — Smart contracts — https://developers.stellar.org/docs/build/smart-contracts  
 2. Soroban RPC — `simulateTransaction` / `sendTransaction` — https://developers.stellar.org/docs/data/apis/rpc/api-reference/methods  
 3. `duplicata-registry` README — `contracts/duplicata-registry/README.md`  
-4. Plano geral v1 — `docs/notes/2026-05-16_dupply-backend-v1-plan.md`  
-5. Stack API atual — `docs/notes/2026-05-17_dupply-api-stack.md`  
+4. General v1 plan — `docs/notes/2026-05-16_dupply-backend-v1-plan.md`  
+5. Current API stack — `docs/notes/2026-05-17_dupply-api-stack.md`  

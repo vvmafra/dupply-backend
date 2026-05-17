@@ -1,140 +1,140 @@
-# Referência técnica aprofundada: SEP-10, SEP-24 e pontos de integração (Dupply)
+# Technical deep dive: SEP-10, SEP-24, and integration points (Dupply)
 
-**Data:** 2026-05-16  
-**Público:** engenheiros que vão implementar `RailsProvider` tipo **SEP-24** ou auditar integrações com carteiras.  
-**Fontes:** [Stellar Developers — Wallet SEP-24](https://developers.stellar.org/docs/build/apps/wallet/sep24), [SEP-24 integration (Anchor Platform)](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/integration), [SEP-24 getting started](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/getting-started).
-
----
-
-## 1. Por que SEP-10 precede SEP-24
-
-O anchor precisa de prova criptográfica de que o cliente controla a conta Stellar indicada, antes de expor endpoints autenticados ou URLs interativas com dados sensíveis (IBAN, limites, etc.).
-
-Fluxo típico (resumo):
-
-1. Cliente pede **challenge** ao servidor do anchor (`GET .../auth` com parâmetros definidos no SEP-10).  
-2. Servidor devolve **transaction** a assinar (geralmente sem pagamento, só metadados / `manage_data`).  
-3. Cliente assina com a **secret key** ou via hardware wallet / MPC.  
-4. Cliente envia a transação assinada; anchor devolve **JWT** (curta duração).  
-5. Cliente usa o JWT nos headers das chamadas **SEP-24** subsequentes.
-
-**Implicação Dupply:** se o vosso backend for “carteira” em nome do utilizador, **não** pode assinar SEP-10 sem o utilizador confiar ao backend a chave — modelo mais comum é o **frontend** assinar e passar só o JWT ao backend, ou o backend ser apenas **proxy** com redação de logs.
+**Date:** 2026-05-16  
+**Audience:** engineers implementing a **SEP-24**-style `RailsProvider` or auditing wallet integrations.  
+**Sources:** [Stellar Developers — Wallet SEP-24](https://developers.stellar.org/docs/build/apps/wallet/sep24), [SEP-24 integration (Anchor Platform)](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/integration), [SEP-24 getting started](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/getting-started).
 
 ---
 
-## 2. SEP-24: depósito vs levantamento
+## 1. Why SEP-10 comes before SEP-24
 
-### 2.1 Withdrawal (off-ramp cripto → fiat)
+The anchor needs cryptographic proof that the client controls the indicated Stellar account before exposing authenticated endpoints or interactive URLs with sensitive data (IBAN, limits, etc.).
 
-Resumo alinhado à doc Stellar:
+Typical flow (summary):
 
-1. Escolher ativo e anchor (via `stellar.toml` / diretório).  
-2. Obter informação de withdraw (`GET /withdraw`).  
-3. Autenticar (SEP-10).  
-4. Submeter pedido (`POST /transactions/withdraw`).  
-5. Anchor devolve URL interativa; utilizador completa KYC/IBAN.  
-6. Carteira envia fundos on-chain para a conta indicada pelo anchor.  
-7. Anchor inicia transferência bancária.
+1. Client requests a **challenge** from the anchor server (`GET .../auth` with SEP-10 parameters).  
+2. Server returns a **transaction** to sign (usually no payment, only metadata / `manage_data`).  
+3. Client signs with **secret key** or via hardware wallet / MPC.  
+4. Client submits the signed transaction; anchor returns a **JWT** (short-lived).  
+5. Client uses the JWT in headers for subsequent **SEP-24** calls.
 
-### 2.2 Deposit (on-ramp fiat → cripto)
-
-Fluxo espelhado: o anchor indica instruções de depósito bancário ou método suportado; após reconciliação, credita ativo Stellar na conta do utilizador.
-
-### 2.3 Estados e polling
-
-A doc de integração descreve **máquina de estados** da transação SEP-24 e eventos JSON-RPC para quem corre **Anchor Platform**. Como **cliente**, o Dupply backend deve:
-
-- persistir `id` da transação no anchor;  
-- fazer **polling** com *backoff* respeitando `Rate-Limits`;  
-- tratar estados terminais (`completed`, `refunded`, `expired`, etc. — nomes exactos na spec SEP-24).
+**Dupply implication:** if your backend acts as “wallet” on behalf of the user, it **cannot** sign SEP-10 without the user trusting the backend with the key — the more common model is the **frontend** signs and passes only the JWT to the backend, or the backend is a **proxy** with log redaction.
 
 ---
 
-## 3. SEP-38 (quotes) no mesmo fluxo
+## 2. SEP-24: deposit vs withdrawal
 
-Quando o utilizador quer **trocar** ativos não 1:1 (ex.: XLM → USDC) dentro do fluxo de rampa, o anchor pode exigir **quote** SEP-38. O backend Dupply deve modelar:
+### 2.1 Withdrawal (off-ramp crypto → fiat)
+
+Summary aligned with Stellar docs:
+
+1. Pick asset and anchor (via `stellar.toml` / directory).  
+2. Get withdraw info (`GET /withdraw`).  
+3. Authenticate (SEP-10).  
+4. Submit request (`POST /transactions/withdraw`).  
+5. Anchor returns interactive URL; user completes KYC/IBAN.  
+6. Wallet sends on-chain funds to the account indicated by the anchor.  
+7. Anchor initiates bank transfer.
+
+### 2.2 Deposit (on-ramp fiat → crypto)
+
+Mirrored flow: anchor gives bank-deposit or supported-method instructions; after reconciliation, credits Stellar asset to the user’s account.
+
+### 2.3 States and polling
+
+Integration docs describe the SEP-24 transaction **state machine** and JSON-RPC events for operators running **Anchor Platform**. As a **client**, the Dupply backend should:
+
+- persist the anchor transaction `id`;  
+- **poll** with *backoff* respecting `Rate-Limits`;  
+- handle terminal states (`completed`, `refunded`, `expired`, etc. — exact names in SEP-24 spec).
+
+---
+
+## 3. SEP-38 (quotes) in the same flow
+
+When the user wants to **swap** non 1:1 assets (e.g. XLM → USDC) inside the ramp flow, the anchor may require a **SEP-38** quote. The Dupply backend should model:
 
 - `quote_id`  
 - `expires_at`  
-- spread / fees devolvidos pelo anchor  
+- spread / fees returned by the anchor  
 
-Isto paraleliza mentalmente com **Etherfuse Quotes**, mas com **campos e endpoints diferentes** — daí a utilidade da abstração `RailsProvider`.
-
----
-
-## 4. SEP-45 e contas contrato (Soroban)
-
-A documentação recente do fluxo SEP-24 menciona **SEP-45** para autenticação quando a conta é **contract account**. Isto é relevante porque:
-
-- O `duplicata-registry` é **Soroban**; os utilizadores finais podem interagir via **smart wallet** `C...`.  
-- Nem todos os anchors / carteiras suportam o mesmo nível de maturidade para **contract signers**.
-
-**Ação:** antes de comprometer UX “só Soroban”, validar com 1–2 anchors alvo se o fluxo SEP-24 + SEP-45 está operacional para o vosso caso de uso.
+This parallels **Etherfuse Quotes** mentally, but with **different fields and endpoints** — hence the value of a `RailsProvider` abstraction.
 
 ---
 
-## 5. `stellar.toml` — campos que o integrador costuma ler
+## 4. SEP-45 and contract accounts (Soroban)
 
-Sem enumerar a spec completa (evolui), o integrador típico procura:
+Recent SEP-24 flow documentation mentions **SEP-45** for authentication when the account is a **contract account**. This matters because:
 
-- `SIGNING_KEY` / chaves de confiança  
-- URLs de `WEB_AUTH_ENDPOINT`, `TRANSFER_SERVER_SEP0024`  
-- Lista de moedas com `code` e `issuer`  
+- `duplicata-registry` is **Soroban**; end users may interact via **`C...` smart wallets**.  
+- Not all anchors / wallets support the same maturity for **contract signers**.
 
-Ferramentas: parsers existentes em SDKs; validar sempre **HTTPS** e **domínio** para evitar phishing.
-
----
-
-## 6. Comparação operacional: implementar cliente SEP-24 vs cliente Etherfuse
-
-### Esforço estimado (ordem de grandeza, equipe pequena)
-
-| Tarefa | SEP-24 cliente | Etherfuse REST |
-|--------|----------------|------------------|
-| Auth | SEP-10 + gestão JWT | API key + fluxo JWT doc Etherfuse |
-| Descoberta | stellar.toml + validação | Config estática |
-| Estados | Polling + mapeamento spec | Polling + webhooks |
-| Testes | Sandbox por anchor | Sandbox Etherfuse |
-| Manutenção | Múltiplos anchors = múltiplos quirks | Um vendor |
-
-### Quando preferir SEP-24 na v1
-
-- Requisito explícito de suportar **vários** anchors do diretório.  
-- Produto estilo **carteira** genérica.  
-
-### Quando preferir Etherfuse na v1
-
-- Um par de moedas / corredor já coberto pela API.  
-- Velocidade de MVP e documentação única.
+**Action:** before committing to “Soroban-only” UX, validate with 1–2 target anchors whether SEP-24 + SEP-45 is operational for your use case.
 
 ---
 
-## 7. Segurança e compliance (checklist mínima)
+## 5. `stellar.toml` — fields integrators usually read
 
-- [ ] Nunca logar JWT completos ou secrets.  
-- [ ] TLS obrigatório; *pinning* opcional para APIs críticas.  
-- [ ] Validar que URLs devolvidas pelo anchor pertencem ao **mesmo domínio** esperado (`stellar.toml`).  
-- [ ] Política de retenção de dados bancários (LGPD / GDPR) se o backend armazenar cópias de payloads.  
-- [ ] Rotação de API keys Etherfuse e webhooks.
+Without enumerating the full spec (it evolves), a typical integrator looks for:
+
+- `SIGNING_KEY` / trust keys  
+- `WEB_AUTH_ENDPOINT`, `TRANSFER_SERVER_SEP0024` URLs  
+- currency list with `code` and `issuer`  
+
+Tools: parsers in SDKs; always validate **HTTPS** and **domain** to reduce phishing.
 
 ---
 
-## 8. Ligação ao indexador Dupply
+## 6. Operational comparison: SEP-24 client vs Etherfuse client
 
-O indexador pode escrever na tabela `chain_events` com:
+### Estimated effort (order of magnitude, small team)
+
+| Task | SEP-24 client | Etherfuse REST |
+|------|---------------|----------------|
+| Auth | SEP-10 + JWT handling | API key + JWT flow per Etherfuse docs |
+| Discovery | stellar.toml + validation | Static config |
+| States | Polling + spec mapping | Polling + webhooks |
+| Tests | Per-anchor sandbox | Etherfuse sandbox |
+| Maintenance | Multiple anchors = multiple quirks | Single vendor |
+
+### When to prefer SEP-24 in v1
+
+- Explicit requirement to support **multiple** directory anchors.  
+- Generic **wallet**-style product.
+
+### When to prefer Etherfuse in v1
+
+- One currency pair / corridor already covered by the API.  
+- MVP speed and single documentation set.
+
+---
+
+## 7. Security and compliance (minimum checklist)
+
+- [ ] Never log full JWTs or secrets.  
+- [ ] Mandatory TLS; optional *pinning* for critical APIs.  
+- [ ] Validate that URLs returned by the anchor belong to the **expected domain** (`stellar.toml`).  
+- [ ] Data retention policy (LGPD / GDPR) if the backend stores copies of banking payloads.  
+- [ ] Rotate Etherfuse API keys and webhooks.
+
+---
+
+## 8. Link to Dupply indexer
+
+The indexer can write to `chain_events` with:
 
 - `contract` = `DUPPLY_REGISTRY_CONTRACT_ID`  
-- `topic` = nome do evento Soroban normalizado  
+- `topic` = normalized Soroban event name  
 - `tx_hash`, `ledger`, `body_json`
 
-O serviço de rampa correlaciona por:
+The ramp service correlates by:
 
-- `user_id` + janela temporal **ou**  
-- campo custom em `memo` da transação Stellar (se adoptarem memo referenciando `ramp_order_id`).
+- `user_id` + time window **or**  
+- custom field in Stellar transaction `memo` (if you adopt a memo referencing `ramp_order_id`).
 
 ---
 
-## Referências
+## References
 
 1. https://developers.stellar.org/docs/build/apps/wallet/sep24  
 2. https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/integration  

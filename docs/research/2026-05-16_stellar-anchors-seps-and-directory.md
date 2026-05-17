@@ -1,106 +1,106 @@
-# Pesquisa: âncoras Stellar, SEPs e “Anchor Platform” (contexto para o backend v1)
+# Research: Stellar anchors, SEPs, and Anchor Platform (context for backend v1)
 
-**Data:** 2026-05-16  
-**Objetivo:** clarificar o que a documentação Stellar chama de **anchor**, quais **SEPs** importam para rampas fiat↔cripto, e como isso se relaciona (e se **diferencia**) de integrações tipo **Etherfuse FX API**.  
-**Fontes oficiais (prioridade):** [Stellar Developers](https://developers.stellar.org/docs), [Anchor Platform / SEP-24](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/getting-started), [Wallet SEP-24](https://developers.stellar.org/docs/build/apps/wallet/sep24), [Anchor Directory](https://anchors.stellar.org/).
-
----
-
-## 1. Glossário Stellar: o que é um “anchor”
-
-No ecossistema Stellar, **anchor** (âncora) é, em termos simples, uma entidade que **emite ativos** na rede e/ou opera **on/off-ramps** (depósito e levantamento entre mundo bancário/fiat e a ledger), normalmente de forma **padronizada** por **Stellar Ecosystem Proposals (SEPs)**.
-
-Não confundir com:
-
-- **Anchor** no sentido de *framework* ML (outro domínio).
-- **“Integrar uma Anchor”** no produto Dupply: pode significar (a) consumir um **provedor de rampa** com API própria (ex.: Etherfuse), ou (b) integrar um **anchor clássico SEP-10 + SEP-24** listado no diretório, ou (c) ambos, em fases distintas.
+**Date:** 2026-05-16  
+**Goal:** Clarify what Stellar documentation calls an **anchor**, which **SEPs** matter for fiat↔crypto ramps, and how that relates to (and **differs** from) integrations such as **Etherfuse FX API**.  
+**Official sources (priority):** [Stellar Developers](https://developers.stellar.org/docs), [Anchor Platform / SEP-24](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/getting-started), [Wallet SEP-24](https://developers.stellar.org/docs/build/apps/wallet/sep24), [Anchor Directory](https://anchors.stellar.org/).
 
 ---
 
-## 2. SEPs relevantes para rampas “hosted” (visão de integrador)
+## 1. Stellar glossary: what is an “anchor”
+
+In the Stellar ecosystem, an **anchor** is, in simple terms, an entity that **issues assets** on the network and/or runs **on/off-ramps** (deposit and withdrawal between banking/fiat and the ledger), usually in a **standardized** way via **Stellar Ecosystem Proposals (SEPs)**.
+
+Do not confuse with:
+
+- **Anchor** in the machine-learning *framework* sense (different domain).  
+- **“Integrating an Anchor”** in the Dupply product: it can mean (a) consuming a **ramp provider** with a proprietary API (e.g. Etherfuse), or (b) integrating a **classic SEP-10 + SEP-24** anchor listed in the directory, or (c) both, in separate phases.
+
+---
+
+## 2. SEPs relevant to “hosted” ramps (integrator view)
 
 ### SEP-24 — Hosted deposit and withdrawal
 
-- Descreve fluxo em que o cliente interage com uma **URL** hospedada pelo anchor após autenticação.  
-- Documentação: [Hosted Deposit and Withdrawal](https://developers.stellar.org/docs/build/apps/wallet/sep24), [SEP-24 getting started (Anchor Platform)](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/getting-started), [Integration guide](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/integration).
+- Describes a flow where the client interacts with a **URL** hosted by the anchor after authentication.  
+- Documentation: [Hosted Deposit and Withdrawal](https://developers.stellar.org/docs/build/apps/wallet/sep24), [SEP-24 getting started (Anchor Platform)](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/getting-started), [Integration guide](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/integration).
 
-Fluxo simplificado (off-ramp, resumo conceitual):
+Simplified flow (off-ramp, conceptual summary):
 
-1. Utilizador escolhe ativo e carteira encontra o anchor.  
-2. Autenticação com o anchor (tipicamente **SEP-10**).  
-3. Carteira abre URL interativa do anchor.  
-4. Utilizador confirma dados; carteira envia ativo na Stellar para a conta de distribuição do anchor.  
-5. Anchor processa transferência bancária (ou equivalente).
+1. User picks an asset and the wallet finds the anchor.  
+2. Authentication with the anchor (typically **SEP-10**).  
+3. Wallet opens the anchor’s interactive URL.  
+4. User confirms details; wallet sends the asset on Stellar to the anchor’s distribution account.  
+5. Anchor processes the bank transfer (or equivalent).
 
 ### SEP-10 — Web authentication
 
-Usado para o anchor provar que o utilizador controla a conta Stellar antes de abrir sessão SEP-24. Ver secção de pré-requisitos em [getting started SEP-24](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/getting-started).
+Used so the anchor can prove the user controls the Stellar account before opening a SEP-24 session. See prerequisites in [SEP-24 getting started](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/getting-started).
 
 ### SEP-1 — stellar.toml
 
-Ficheiro de descoberta do anchor (domínio, moedas, URLs de autenticação, etc.). Pré-requisito típico para integrações “diretório + carteira”.
+Anchor discovery file (domain, assets, authentication URLs, etc.). Typical prerequisite for “directory + wallet” integrations.
 
-### SEP-38 (âmbito de câmbio)
+### SEP-38 (FX scope)
 
-Mencionado na documentação de integração para **quotes** quando há conversão entre ativos não equivalentes. Ver [integration](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/integration).
+Mentioned in integration docs for **quotes** when converting between non-equivalent assets. See [integration](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/integration).
 
-### SEP-45 (menção em docs atuais)
+### SEP-45 (mentioned in current docs)
 
-A doc de *getting started* referencia **SEP-45** no contexto de *Stellar Web Authentication for contract account* — relevante se o utilizador for **conta contrato (Soroban)** em vez de só conta clássica `G...`. Isto impacta o desenho Dupply se o “seller” operar via **smart wallet**.
+*Getting started* references **SEP-45** in the context of *Stellar Web Authentication for contract account* — relevant if the user is a **contract account (Soroban)** instead of only a classic `G...` account. This affects Dupply design if the “seller” operates via a **smart wallet**.
 
 ---
 
 ## 3. Anchor Platform (Stellar)
 
-É a stack de referência da SDF para operadores que querem **correr** um anchor com padrões SEP (eventos JSON-RPC, JWT, etc.). Para o Dupply como **aplicação** que *consome* rampas, o mais comum é:
+This is the SDF’s reference stack for operators who want to **run** an anchor with SEP standards (JSON-RPC events, JWT, etc.). For Dupply as an **application** that *consumes* ramps, the common cases are:
 
-- integrar como **cliente** SEP-24 / carteira / servidor que orquestra links; **ou**
-- integrar **API de terceiros** (Etherfuse) que já agrega KYC, quotes e ordens.
+- integrate as a **SEP-24 client** / wallet / server that orchestrates links; **or**  
+- integrate a **third-party API** (Etherfuse) that already bundles KYC, quotes, and orders.
 
-Documentação: [Anchor Platform](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/getting-started).
+Documentation: [Anchor Platform](https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/getting-started).
 
 ---
 
 ## 4. Anchor Directory
 
-Lista pública de âncoras e metadados: [https://anchors.stellar.org/](https://anchors.stellar.org/).  
-Útil para: descobrir **quem** suporta **qual** ativo/país, e validar `stellar.toml` / endpoints.
+Public list of anchors and metadata: [https://anchors.stellar.org/](https://anchors.stellar.org/).  
+Useful to discover **who** supports **which** asset/country and to validate `stellar.toml` / endpoints.
 
 ---
 
-## 5. Relação com Soroban e com o `duplicata-registry`
+## 5. Relationship to Soroban and `duplicata-registry`
 
-- O contrato **Soroban** atual regista **duplicatas** e **não** implementa rampa.  
-- Uma **rampa** (fiat↔stable ou stable↔BRL na conta bancária) é, na prática, **off-chain + transações Stellar** coordenadas por um provedor.  
-- O backend v1 pode:  
-  - **Orquestrar** chamadas a um anchor (SEP-24 / API Etherfuse);  
-  - **Persistir** estado de KYC/ordem **na BD**;  
-  - **Submeter** transações Stellar assinadas pelo utilizador ou por relayer (conforme modelo legal e técnico).
-
----
-
-## 6. Critérios de escolha: “anchor SEP-24” vs “API Etherfuse”
-
-| Critério | Anchor clássico (SEP-24 + diretório) | Etherfuse FX API |
-|----------|--------------------------------------|-------------------|
-| Descoberta | `stellar.toml`, diretório | Conta org + docs Etherfuse |
-| UX rampa | URL hosted SEP-24 | Hosted UI ou programático |
-| Padronização | Alta (ecossistema Stellar) | API própria (REST) |
-| Ativos / países | Por anchor | Definido pela Etherfuse (ver API) |
-| Esforço v1 | Maior (fluxo SEP-10/24 completo) | Menor se API cobre o teu caso |
-
-**Recomendação de documentação:** no v1, **escolher um caminho principal** (Etherfuse *ou* um anchor SEP-24 específico para BRL/USDC), documentar a decisão em ADR, e deixar a interface interna do backend como **“RailsProvider”** com duas implementações na fase 2 se necessário.
+- The current **Soroban** contract records **duplicatas** and does **not** implement a ramp.  
+- A **ramp** (fiat↔stable or stable↔bank account) is, in practice, **off-chain + Stellar transactions** coordinated by a provider.  
+- The v1 backend can:  
+  - **Orchestrate** calls to an anchor (SEP-24 / Etherfuse API);  
+  - **Persist** KYC/order state **in the DB**;  
+  - **Submit** Stellar transactions signed by the user or by a relayer (depending on legal and technical model).
 
 ---
 
-## 7. Próximos ficheiros nesta série
+## 6. Selection criteria: “SEP-24 anchor” vs “Etherfuse API”
 
-- `2026-05-16_etherfuse-stellar-fx-api.md` — detalhe do produto Etherfuse (imprensa + FX API).  
-- `../notes/2026-05-16_dupply-backend-v1-plan.md` — plano de implementação v1 com integração de rampa.
+| Criterion | Classic anchor (SEP-24 + directory) | Etherfuse FX API |
+|-----------|--------------------------------------|------------------|
+| Discovery | `stellar.toml`, directory | Org account + Etherfuse docs |
+| Ramp UX | SEP-24 hosted URL | Etherfuse hosted UI or API-only |
+| Standardization | High (Stellar ecosystem) | Proprietary API (REST) |
+| Assets / countries | Per anchor | Defined by Etherfuse (see API) |
+| v1 effort | Higher (full SEP-10/24 flow) | Lower if the API covers your case |
+
+**Documentation recommendation:** in v1, **pick one primary path** (Etherfuse *or* a specific SEP-24 anchor for BRL/USDC), record the decision in an ADR, and keep the backend’s internal interface as **`RailsProvider`** with two implementations in phase 2 if needed.
 
 ---
 
-## Referências (links)
+## 7. Next documents in this series
+
+- `2026-05-16_etherfuse-stellar-fx-api.md` — Etherfuse product detail (press + FX API).  
+- `../notes/2026-05-16_dupply-backend-v1-plan.md` — v1 implementation plan including ramp integration.
+
+---
+
+## References (links)
 
 1. Stellar Docs — Wallet: SEP-24 — https://developers.stellar.org/docs/build/apps/wallet/sep24  
 2. Stellar Docs — Anchor Platform SEP-24 getting started — https://developers.stellar.org/docs/platforms/anchor-platform/sep-guide/sep24/getting-started  
