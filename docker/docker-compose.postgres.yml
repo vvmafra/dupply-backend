@@ -1,0 +1,20 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: dupply-postgres-local
+    environment:
+      POSTGRES_USER: dupply
+      POSTGRES_PASSWORD: dupply
+      POSTGRES_DB: dupply_local
+    ports:
+      - "15432:5432"
+    volumes:
+      - dupply_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dupply -d dupply_local"]
+      interval: 3s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  dupply_pgdata:
