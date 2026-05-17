@@ -1,10 +1,10 @@
 # dupply-backend
 
-Backend Dupply: contrato Soroban **duplicata-registry** e esqueleto de **indexador**.
+Dupply Backend: **duplicata-registry** Soroban contract and **indexer** skeleton.
 
-## Contrato Soroban (`duplicata-registry`)
+## Soroban Contract (`duplicata-registry`)
 
-Local: [contracts/duplicata-registry/](contracts/duplicata-registry/)
+Location: [contracts/duplicata-registry/](contracts/duplicata-registry/)
 
 ```bash
 cd contracts/duplicata-registry
@@ -12,17 +12,17 @@ cargo test -p duplicata-registry
 stellar contract build
 ```
 
-- **Rust:** ver [contracts/duplicata-registry/rust-toolchain.toml](contracts/duplicata-registry/rust-toolchain.toml) (atualmente `1.92.0` por requisito da CLI `stellar contract build`).
+- **Rust:** see [contracts/duplicata-registry/rust-toolchain.toml](contracts/duplicata-registry/rust-toolchain.toml) (currently `1.92.0` as required by the `stellar contract build` CLI).
 - **Wasm:** `contracts/duplicata-registry/target/wasm32v1-none/release/duplicata_registry.wasm`
-- **Deploy testnet (opcional):** [contracts/duplicata-registry/scripts/deploy-testnet.sh](contracts/duplicata-registry/scripts/deploy-testnet.sh) — requer `STELLAR_IDENTITY` e Wasm já compilado.
+- **Deploy to testnet (optional):** [contracts/duplicata-registry/scripts/deploy-testnet.sh](contracts/duplicata-registry/scripts/deploy-testnet.sh) — requires `STELLAR_IDENTITY` and the Wasm already compiled.
 
-Documentação de produto/spec (Markdown no repo do front, só referência): `dupply-frontend/docs/notes/2026-05-15_stellar-duplicata-master-implementation-guide.md`.
+Product/spec documentation (Markdown in the frontend repo, only as reference): `dupply-frontend/docs/notes/2026-05-15_stellar-duplicata-master-implementation-guide.md`.
 
-## Indexador (MVP)
+## Indexer (MVP)
 
-Ver [indexer/README.md](indexer/README.md) e `indexer/src/index.js`.
+See [indexer/README.md](indexer/README.md) and `indexer/src/index.js`.
 
-## Notas
+## Notes
 
-- O **frontend** (`dupply-frontend`) não faz parte destas alterações.
-- **Não** foi executado `git push` para remoto como parte desta entrega.
+- The **frontend** (`dupply-frontend`) is not part of these changes.
+- **No** `git push` was executed to remote as part of this delivery.
