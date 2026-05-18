@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
-import type { AppConfig } from "../../config.js";
-import type { Db } from "../../db/index.js";
+import type { AppDeps } from "../../application/deps.js";
+import { executeGetRampAssets } from "../../application/ramp/queries/getRampAssets.js";
 import { rampOrders, rampQuotes } from "../../db/schema.js";
 import {
   EtherfuseClient,
@@ -65,7 +65,7 @@ function nowMs(): string {
 
 export async function registerRampRoutes(
   app: FastifyInstance,
-  deps: { db: Db; config: AppConfig },
+  deps: AppDeps,
 ): Promise<void> {
   const { db, config } = deps;
 
@@ -78,9 +78,13 @@ export async function registerRampRoutes(
       return reply.code(400).send({ error: "invalid_query", details: parsed.error.flatten() });
     }
     const { blockchain, currency, wallet } = parsed.data;
-    const client = new EtherfuseClient(config.ETHERFUSE_BASE_URL, config.ETHERFUSE_API_KEY);
     try {
-      const data = await client.getRampAssets(blockchain, currency, wallet);
+      const data = await executeGetRampAssets(deps, {
+        blockchain,
+        currency,
+        wallet,
+        etherfuseApiKey: config.ETHERFUSE_API_KEY,
+      });
       return reply.send(data);
     } catch (e) {
       if (e instanceof EtherfuseHttpError) {

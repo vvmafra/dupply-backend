@@ -26,7 +26,7 @@ npm run dev
 ### Rotas
 
 - `GET /health` — sem autenticação.
-- **Rampa** (`X-Dupply-Api-Key`): `POST /v1/ramp/quotes`, `POST /v1/ramp/orders`, `GET /v1/ramp/orders/:id`.
+- **Rampa** (`X-Dupply-Api-Key`): `GET /v1/ramp/assets`, `POST /v1/ramp/quotes`, `POST /v1/ramp/orders`, `GET /v1/ramp/orders/:id`.
 - **Duplicatas** (`X-Dupply-Api-Key`):  
   - `POST /v1/duplicatas` — valida payload, simula `issue`, grava draft, devolve `unsignedTransactionXdr`.  
   - `POST /v1/duplicatas/:id/confirm` — corpo `{ "txHash": "..." }` após submissão on-chain; grava `chain_duplicata_id`.  
@@ -59,7 +59,11 @@ stellar contract bindings typescript \
 # Remover re-exports `export * from "@stellar/stellar-sdk"` e o bloco `window.Buffer` (Node).
 ```
 
-## Smoke Etherfuse (direto à API)
+## Regressão / smoke (checklist PR)
+
+Copiar para a descrição do PR após refactors na API. Ajustar `BASE` e secrets localmente.
+
+### Etherfuse (script)
 
 ```bash
 export ETHERFUSE_API_KEY=...
@@ -69,6 +73,34 @@ npm run etherfuse:smoke
 
 Opcionais: `ETHERFUSE_SMOKE_TARGET_ASSET`, `ETHERFUSE_SMOKE_AMOUNT`, `ETHERFUSE_SMOKE_WALLET_ADDRESS`.
 
+### Etherfuse (HTTP)
+
+Com `npm run dev` e `.env` com `DUPPLY_API_KEY` + `ETHERFUSE_API_KEY`:
+
+```bash
+BASE=http://localhost:8080
+curl -sS "$BASE/v1/ramp/assets?blockchain=stellar&currency=brl&wallet=G..." \
+  -H "X-Dupply-Api-Key: $DUPPLY_API_KEY"
+```
+
+### Duplicatas (HTTP)
+
+Requer `DUPPLY_REGISTRY_CONTRACT_ID`, `SOROBAN_RPC_URL`, emitente na allowlist e corpo válido (ver `src/domain/duplicata/dto.ts`).
+
+```bash
+BASE=http://localhost:8080
+HDR=( -H "Content-Type: application/json" -H "X-Dupply-Api-Key: $DUPPLY_API_KEY" )
+
+# 1) Simular issue (substituir corpo pelo payload real)
+curl -sS "$BASE/v1/duplicatas" "${HDR[@]}" -d '{ ... }'
+
+# 2) Após submeter o XDR na rede: confirmar com tx hash
+curl -sS "$BASE/v1/duplicatas/<DRAFT_ID>/confirm" "${HDR[@]}" -d '{"txHash":"<HEX>"}'
+
+# 3) Ler draft + chain record
+curl -sS "$BASE/v1/duplicatas/<DRAFT_ID>" "${HDR[@]}"
+```
+
 ## Referências oficiais
 
 - Stellar Soroban — https://developers.stellar.org/docs/build/smart-contracts  
@@ -76,4 +108,6 @@ Opcionais: `ETHERFUSE_SMOKE_TARGET_ASSET`, `ETHERFUSE_SMOKE_AMOUNT`, `ETHERFUSE_
 - POST /ramp/quote — https://docs.etherfuse.com/api-reference/quotes/get-quote-for-conversion  
 - POST /ramp/order — https://docs.etherfuse.com/api-reference/orders/create-a-new-order  
 - Plano v1 — `../docs/notes/2026-05-16_dupply-backend-v1-plan.md`  
-- Arquitetura duplicata + contrato — `../docs/notes/2026-05-18_v1-duplicata-contract-integration-architecture.md`
+- Arquitetura duplicata + contrato — `../docs/notes/2026-05-18_v1-duplicata-contract-integration-architecture.md`  
+- Regras de arquitetura API — `../docs/ARCHITECTURE-RULES.md`  
+- Plano DDD + CQRS — `../docs/notes/2026-05-19_ddd-cqrs-implementation-plan.md`  

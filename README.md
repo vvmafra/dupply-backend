@@ -29,6 +29,7 @@ HTTP endpoints (prefix = server root, e.g. `http://localhost:8080`):
 | Method | Path | Authentication | Description |
 |--------|------|----------------|-------------|
 | GET | `/health` | — | Liveness. |
+| GET | `/v1/ramp/assets` | Header `X-Dupply-Api-Key` | Resolves ramp assets (query params: `blockchain`, `currency`, `wallet`). Requires `ETHERFUSE_API_KEY`. |
 | POST | `/v1/ramp/quotes` | Header `X-Dupply-Api-Key` | Creates Etherfuse quote; persists `ramp_quotes`. Requires `ETHERFUSE_API_KEY`. |
 | POST | `/v1/ramp/orders` | `X-Dupply-Api-Key` | Creates order from a quote; persists `ramp_orders`. |
 | GET | `/v1/ramp/orders/:id` | `X-Dupply-Api-Key` | Order state from DB (`id` = Dupply internal UUID). |
@@ -72,6 +73,9 @@ Postgres 16 in Docker for development — [docker/README.md](docker/README.md). 
 
 ## Documentation (research and plans)
 
+- [docs/ARCHITECTURE-RULES.md](docs/ARCHITECTURE-RULES.md) — layering, CQRS discipline, “who may call whom”.  
+- [docs/notes/2026-05-19_ddd-cqrs-implementation-plan.md](docs/notes/2026-05-19_ddd-cqrs-implementation-plan.md) — DDD/CQRS migration phases for `api/`.  
+- [DECISIONS.md](DECISIONS.md) — architecture decision log (short entries).  
 - [docs/research/2026-05-16_stellar-anchors-seps-and-directory.md](docs/research/2026-05-16_stellar-anchors-seps-and-directory.md) — anchors, SEP-24, Stellar directory.  
 - [docs/research/2026-05-16_stellar-sep10-sep24-deep-dive.md](docs/research/2026-05-16_stellar-sep10-sep24-deep-dive.md) — SEP-10/24, SEP-38/45, security.  
 - [docs/research/2026-05-16_etherfuse-stellar-fx-api.md](docs/research/2026-05-16_etherfuse-stellar-fx-api.md) — Etherfuse FX API and sandbox.  
