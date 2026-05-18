@@ -1,28 +1,52 @@
 # dupply-backend
 
-Dupply backend repository: **Soroban duplicata registry**, **HTTP API v1**, and **indexer** (MVP).
+Monorepo for Dupply: **Soroban duplicata registry**, **HTTP API v1**, and **indexer** (MVP). Layout follows common **npm workspaces** + dedicated **Soroban** workspace.
 
-| Component | Directory | Role |
-|-----------|-----------|------|
-| Contract | [`contracts/duplicata-registry/`](contracts/duplicata-registry/) | `DuplicataRegistry` — `issue`, issuer allowlist, on-chain events. |
-| API | [`api/`](api/) | Fastify: **Etherfuse** ramp, **duplicata** flow (simulate → XDR → confirm `txHash`), SQLite in dev. |
-| Indexer | [`indexer/`](indexer/) | Node skeleton for events / Horizon (see indexer README). |
+## Repository layout
 
-The **frontend** (`dupply-frontend`) lives in a separate repository; changes here do not include it unless explicitly requested.
+| Path | Role |
+|------|------|
+| [`packages/api/`](packages/api/) | Fastify HTTP API: Etherfuse ramp, duplicata flow (simulate → XDR → confirm `txHash`), SQLite in dev. |
+| [`packages/indexer/`](packages/indexer/) | Node skeleton for events / Horizon (see package README). |
+| [`soroban/`](soroban/) | Rust workspace: `duplicata-registry` Soroban contract under [`soroban/crates/duplicata-registry/`](soroban/crates/duplicata-registry/). |
+| [`docs/`](docs/) | Architecture rules, research, implementation plans. |
+| [`docker/`](docker/) | Optional local PostgreSQL compose. |
+
+```text
+dupply-backend/
+  package.json              # npm workspaces root
+  packages/
+    api/                      # @dupply/api
+    indexer/                  # @dupply/indexer
+  soroban/
+    Cargo.toml                # Rust workspace (members: crates/*)
+    crates/duplicata-registry/
+```
+
+The **frontend** (`dupply-frontend`) lives in a separate repository.
 
 ---
 
-## API v1
+## Quick start (API)
 
-Node + TypeScript service: see **[api/README.md](api/README.md)** (routes, env vars, Etherfuse, Stellar, regenerating Wasm bindings).
+From the **repository root**:
 
 ```bash
-cd api
+npm install
+npm run dev:api
+```
+
+Or work inside the package:
+
+```bash
+cd packages/api
 cp .env.example .env
 # Edit .env: DUPPLY_API_KEY, DUPPLY_REGISTRY_CONTRACT_ID, etc.
 npm install
 npm run dev
 ```
+
+Details: **[packages/api/README.md](packages/api/README.md)** (routes, env, Etherfuse, Stellar, Wasm bindings).
 
 HTTP endpoints (prefix = server root, e.g. `http://localhost:8080`):
 
@@ -46,14 +70,14 @@ Duplicata flow (summary): the API **does not** custody the issuer key — it ret
 ## Soroban contract (`duplicata-registry`)
 
 ```bash
-cd contracts/duplicata-registry
+cd soroban
 cargo test -p duplicata-registry
 stellar contract build
 ```
 
-- **Rust:** [rust-toolchain.toml](contracts/duplicata-registry/rust-toolchain.toml) pins **`1.92.0`** and `wasm32v1-none` (required by `stellar contract build`).
-- **Wasm:** `contracts/duplicata-registry/target/wasm32v1-none/release/duplicata_registry.wasm`
-- **Testnet deploy (optional):** [scripts/deploy-testnet.sh](contracts/duplicata-registry/scripts/deploy-testnet.sh) — needs `STELLAR_IDENTITY` and the Wasm already built; see [DEPLOYMENT-testnet.md](contracts/duplicata-registry/DEPLOYMENT-testnet.md).
+- **Rust:** [soroban/rust-toolchain.toml](soroban/rust-toolchain.toml) pins **`1.92.0`** and `wasm32v1-none` (required by `stellar contract build`).
+- **Wasm:** `soroban/target/wasm32v1-none/release/duplicata_registry.wasm`
+- **Testnet deploy (optional):** [soroban/scripts/deploy-testnet.sh](soroban/scripts/deploy-testnet.sh) — needs `STELLAR_IDENTITY` and the Wasm already built; see [soroban/DEPLOYMENT-testnet.md](soroban/DEPLOYMENT-testnet.md).
 
 Product spec (cross-reference to frontend): `dupply-frontend/docs/notes/2026-05-15_stellar-duplicata-master-implementation-guide.md`.
 
@@ -67,18 +91,18 @@ Postgres 16 in Docker for development — [docker/README.md](docker/README.md). 
 
 ## Indexer
 
-[Indexer README](indexer/README.md) and `indexer/src/index.js`.
+[packages/indexer/README.md](packages/indexer/README.md) and `packages/indexer/src/index.js`.
 
 ---
 
 ## Documentation (research and plans)
 
 - [docs/ARCHITECTURE-RULES.md](docs/ARCHITECTURE-RULES.md) — layering, CQRS discipline, “who may call whom”.  
-- [docs/notes/2026-05-19_ddd-cqrs-implementation-plan.md](docs/notes/2026-05-19_ddd-cqrs-implementation-plan.md) — DDD/CQRS migration phases for `api/`.  
+- [docs/notes/2026-05-19_ddd-cqrs-implementation-plan.md](docs/notes/2026-05-19_ddd-cqrs-implementation-plan.md) — DDD/CQRS migration phases for the API package.  
 - [DECISIONS.md](DECISIONS.md) — architecture decision log (short entries).  
 - [docs/research/2026-05-16_stellar-anchors-seps-and-directory.md](docs/research/2026-05-16_stellar-anchors-seps-and-directory.md) — anchors, SEP-24, Stellar directory.  
 - [docs/research/2026-05-16_stellar-sep10-sep24-deep-dive.md](docs/research/2026-05-16_stellar-sep10-sep24-deep-dive.md) — SEP-10/24, SEP-38/45, security.  
 - [docs/research/2026-05-16_etherfuse-stellar-fx-api.md](docs/research/2026-05-16_etherfuse-stellar-fx-api.md) — Etherfuse FX API and sandbox.  
 - [docs/notes/2026-05-16_dupply-backend-v1-plan.md](docs/notes/2026-05-16_dupply-backend-v1-plan.md) — backend v1 plan.  
-- [docs/notes/2026-05-17_dupply-api-stack.md](docs/notes/2026-05-17_dupply-api-stack.md) — `api/` stack and decisions.  
+- [docs/notes/2026-05-17_dupply-api-stack.md](docs/notes/2026-05-17_dupply-api-stack.md) — API stack and decisions.  
 - [docs/notes/2026-05-18_v1-duplicata-contract-integration-architecture.md](docs/notes/2026-05-18_v1-duplicata-contract-integration-architecture.md) — duplicata + contract (architecture).

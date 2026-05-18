@@ -1,5 +1,7 @@
 # Dupply API (v1)
 
+Pacote **`@dupply/api`** do monorepo `dupply-backend`. Na raiz do repositório: `npm install` e `npm run dev:api` (ou `cd packages/api && npm run dev`).
+
 Serviço HTTP (Fastify) com persistência SQLite (dev): **rampa** via [Etherfuse FX API](https://docs.etherfuse.com/overview), **duplicatas** via contrato Soroban `duplicata-registry` (bindings TypeScript gerados a partir do Wasm do crate), e webhook Etherfuse assinado (`X-Signature` — [Verifying Webhooks](https://docs.etherfuse.com/guides/verifying-webhooks)).
 
 ## Requisitos
@@ -53,7 +55,7 @@ Após mudar o Rust e `stellar contract build`, gerar TypeScript para o Wasm e **
 
 ```bash
 stellar contract bindings typescript \
-  --wasm ../contracts/duplicata-registry/target/wasm32v1-none/release/duplicata_registry.wasm \
+  --wasm ../../soroban/target/wasm32v1-none/release/duplicata_registry.wasm \
   --output-dir /tmp/dupply-registry-ts --overwrite
 # Copiar /tmp/dupply-registry-ts/src/index.ts -> src/generated/duplicata-registry-contract.ts
 # Remover re-exports `export * from "@stellar/stellar-sdk"` e o bloco `window.Buffer` (Node).
@@ -107,7 +109,7 @@ curl -sS "$BASE/v1/duplicatas/<DRAFT_ID>" "${HDR[@]}"
 - Etherfuse overview — https://docs.etherfuse.com/overview  
 - POST /ramp/quote — https://docs.etherfuse.com/api-reference/quotes/get-quote-for-conversion  
 - POST /ramp/order — https://docs.etherfuse.com/api-reference/orders/create-a-new-order  
-- Plano v1 — `../docs/notes/2026-05-16_dupply-backend-v1-plan.md`  
-- Arquitetura duplicata + contrato — `../docs/notes/2026-05-18_v1-duplicata-contract-integration-architecture.md`  
-- Regras de arquitetura API — `../docs/ARCHITECTURE-RULES.md`  
-- Plano DDD + CQRS — `../docs/notes/2026-05-19_ddd-cqrs-implementation-plan.md`  
+- Plano v1 — `../../docs/notes/2026-05-16_dupply-backend-v1-plan.md`  
+- Arquitetura duplicata + contrato — `../../docs/notes/2026-05-18_v1-duplicata-contract-integration-architecture.md`  
+- Regras de arquitetura API — `../../docs/ARCHITECTURE-RULES.md`  
+- Plano DDD + CQRS — `../../docs/notes/2026-05-19_ddd-cqrs-implementation-plan.md`  

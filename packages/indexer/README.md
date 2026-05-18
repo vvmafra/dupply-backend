@@ -10,7 +10,7 @@ Placeholder para ingerir eventos `DuplicataIssued` do contrato `duplicata-regist
 ## Arranque
 
 ```bash
-cd indexer
+cd packages/indexer
 npm install   # quando houver dependências Soroban JS
 node src/index.js
 ```

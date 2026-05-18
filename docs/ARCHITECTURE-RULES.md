@@ -1,8 +1,8 @@
-# Regras de arquitetura — `dupply-backend` / serviço `api/`
+# Regras de arquitetura — `dupply-backend` / pacote `packages/api/`
 
 **Objetivo:** contrato de engenharia para evolução do backend em direção a **DDD** (domínios claros) e **CQRS leve** (comandos vs consultas), sem prescricao de ferramentas desnecessárias.  
 **Contexto:** ver nota `[docs/notes/2026-05-18_backend-ddd-cqrs-assessment.md](notes/2026-05-18_backend-ddd-cqrs-assessment.md)`.  
-**Âmbito:** código em `api/src/` (Fastify, Drizzle, integrações Etherfuse e Soroban). Contrato Rust e `contracts/` seguem as regras do próprio crate.
+**Âmbito:** código em `packages/api/src/` (Fastify, Drizzle, integrações Etherfuse e Soroban). Contrato Rust em `soroban/` segue as regras do próprio crate.
 
 ---
 
@@ -83,7 +83,7 @@ Matriz **camada chama camada** (linha = quem chama, coluna = quem é chamado):
 | Contexto      | Código típico hoje                                            | Regra                                                                                                                      |
 | ------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
 | **Ramp**      | `routes/v1/ramp.ts`, `integrations/etherfuse`, webhook        | Novas regras de rampa entram em `domain/ramp` (quando criado) ou em handler de application, **não** em `domain/duplicata`. |
-| **Duplicata** | `domain/duplicata`, `integrations/registry`, rotas duplicatas | IDs, enums e hashes alinhados ao contrato; mudanças coordenadas com `contracts/duplicata-registry`.                        |
+| **Duplicata** | `domain/duplicata`, `integrations/registry`, rotas duplicatas | IDs, enums e hashes alinhados ao contrato; mudanças coordenadas com `soroban/crates/duplicata-registry`.                        |
 
 
 **Correlação rampa ↔ duplicata** (futuro): apenas via **IDs explícitos** na BD ou eventos — sem acoplamento temporal em código (sem “chamar ramp ao confirmar duplicata” sem caso de uso documentado).
@@ -109,7 +109,7 @@ Matriz **camada chama camada** (linha = quem chama, coluna = quem é chamado):
 
 ## 7. Configuração e segredos
 
-- **Obrigatório:** novas variáveis em `config.ts` + `.env.example` + menção no `api/README.md` se forem operacionais.  
+- **Obrigatório:** novas variáveis em `config.ts` + `.env.example` + menção no `packages/api/README.md` se forem operacionais.  
 - **Proibido:** `process.env` espalhado fora de `config` (exceto testes).
 
 ---

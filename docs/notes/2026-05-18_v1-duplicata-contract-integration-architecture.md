@@ -2,8 +2,8 @@
 
 **Date:** 2026-05-18  
 **Scope:** plan only the **basic creation flow** for duplicatas aligned with the `DuplicataRegistry` contract, **without** expanding ramp/Etherfuse or full registry administration.  
-**Implementation:** see code under `api/` — routes `POST /v1/duplicatas`, `POST /v1/duplicatas/:id/confirm`, `GET /v1/duplicatas/:id`, `GET /v1/duplicatas/on-chain/:chainId`, bindings in `api/src/generated/duplicata-registry-contract.ts`.  
-**Contract reference:** `contracts/duplicata-registry/contracts/duplicata-registry/src/` (`issue`, `IssuePayload`, `DuplicataIssued`, errors in `RegistryError`).  
+**Implementation:** see code under `packages/api/` — routes `POST /v1/duplicatas`, `POST /v1/duplicatas/:id/confirm`, `GET /v1/duplicatas/:id`, `GET /v1/duplicatas/on-chain/:chainId`, bindings in `packages/api/src/generated/duplicata-registry-contract.ts`.  
+**Contract reference:** `soroban/crates/duplicata-registry/src/` (`issue`, `IssuePayload`, `DuplicataIssued`, errors in `RegistryError`).  
 **Official Stellar / Soroban docs:** [Smart contracts — docs](https://developers.stellar.org/docs/build/smart-contracts), [RPC methods](https://developers.stellar.org/docs/data/apis/rpc/api-reference/methods), [Assemble transaction (Horizon legacy patterns)](https://developers.stellar.org/docs/build/guides/transactions) — for Soroban invocations use **Soroban RPC** (`simulateTransaction`, `sendTransaction`).
 
 ---
@@ -69,7 +69,7 @@ sequenceDiagram
 
 ---
 
-## 4. Layers in the `api/` package
+## 4. Layers in the `packages/api` package
 
 | Module | Responsibility |
 |--------|----------------|
@@ -174,7 +174,7 @@ The contract stores only commitments. The Dupply plan should **document in one p
 
 ---
 
-## 8. Suggested technical stack (Node, aligned with current `api/`)
+## 8. Suggested technical stack (Node, aligned with current `packages/api`)
 
 | Piece | Choice | Notes |
 |-------|--------|--------|
@@ -196,7 +196,7 @@ STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org
 
 ## 9. Indexer
 
-Current `indexer/` may, in a sub-phase:
+Current `packages/indexer/` may, in a sub-phase:
 
 - consume `DuplicataIssued` events;  
 - write `chain_duplicata_id` + `tx_hash` (if DB is shared or via internal queue).
@@ -231,7 +231,7 @@ Current `indexer/` may, in a sub-phase:
 | D1 | Drizzle schema + stub routes + Zod DTOs mirroring `IssuePayload`. |
 | D2 | RPC client + `issue` simulation + `duplicata_drafts` persistence. |
 | D3 | `POST /confirm` + result / event parsing. |
-| D4 | Tests + error hardening + `api/README.md` documentation. |
+| D4 | Tests + error hardening + `packages/api/README.md` documentation. |
 | D5 (optional) | Indexer writes to same DB or internal topic. |
 
 ---
@@ -256,6 +256,6 @@ Feature flag `DUPLICATA_ROUTES_ENABLED=false` or unregister routes; data in new 
 
 1. Stellar — Smart contracts — https://developers.stellar.org/docs/build/smart-contracts  
 2. Soroban RPC — `simulateTransaction` / `sendTransaction` — https://developers.stellar.org/docs/data/apis/rpc/api-reference/methods  
-3. `duplicata-registry` README — `contracts/duplicata-registry/README.md`  
+3. `duplicata-registry` README — `soroban/README.md`  
 4. General v1 plan — `docs/notes/2026-05-16_dupply-backend-v1-plan.md`  
 5. Current API stack — `docs/notes/2026-05-17_dupply-api-stack.md`  

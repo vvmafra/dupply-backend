@@ -1,7 +1,7 @@
 # Backend Dupply: avaliação para DDD + CQRS
 
 **Data:** 2026-05-18  
-**Objetivo:** mapear a arquitetura **atual** do serviço `api/`, contrastar com **DDD** (Domain-Driven Design) e **CQRS** (Command Query Responsibility Segregation), e listar o que **manter**, **refatorar** ou **introduzir** — sem comprometer ainda com datas ou “big bang”.  
+**Objetivo:** mapear a arquitetura **atual** do pacote `packages/api/`, contrastar com **DDD** (Domain-Driven Design) e **CQRS** (Command Query Responsibility Segregation), e listar o que **manter**, **refatorar** ou **introduzir** — sem comprometer ainda com datas ou “big bang”.  
 **Leituras oficiais / canónicas (prioridade):** [Martin Fowler — CQRS](https://martinfowler.com/bliki/CQRS.html), [Azure Architecture Center — CQRS pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs), [DDD Reference (Eric Evans / Domain Language)](https://www.domainlanguage.com/ddd/reference/).
 
 ---
@@ -17,10 +17,10 @@
 
 ---
 
-## 2. Mapa do que existe hoje (`api/`)
+## 2. Mapa do que existe hoje (`packages/api/`)
 
 ```
-api/src/
+packages/api/src/
 ├── server.ts                 # composição: DB, migrações, registo de rotas
 ├── config.ts                 # env / AppConfig
 ├── db/

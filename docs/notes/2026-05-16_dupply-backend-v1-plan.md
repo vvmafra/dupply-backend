@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-16  
 **Scope:** Define **v1** of the service in `dupply-backend` (API + persistence + jobs) and **one** initial **ramp/exchange** integration, with documented preference for **Etherfuse FX API**, while keeping the design **extensible** for **SEP-24 anchors** later.  
-**Existing artifacts:** Soroban `DuplicataRegistry` contract (see `contracts/duplicata-registry/` and `DEPLOYMENT-testnet.md`); Node indexer skeleton in `indexer/`.
+**Existing artifacts:** Soroban `DuplicataRegistry` contract (see `soroban/` and `soroban/DEPLOYMENT-testnet.md`); Node indexer skeleton in `packages/indexer/`.
 
 ---
 
@@ -51,12 +51,12 @@ flowchart LR
 
 ### 2.1 Suggested modules
 
-1. **`api/`** — routes, input validation, serialization, rate limiting.  
+1. **`packages/api/`** — routes, input validation, serialization, rate limiting.  
 2. **`domain/duplicata/`** — business rules, internal IDs, link to indexer events.  
 3. **`integrations/rails/`** — `RailsProvider` interface + `EtherfuseRailsProvider` implementation.  
 4. **`integrations/stellar/`** — Horizon/RPC reads, XDR preparation (if the backend signs or only simulates).  
 5. **`workers/`** — queue (e.g. BullMQ + Redis) for webhooks, order-state reconciliation.  
-6. **`indexer/`** — skeleton already exists; v1 may consume events and write to the same DB via internal API or shared library.
+6. **`packages/indexer/`** — skeleton already exists; v1 may consume events and write to the same DB via internal API or shared library.
 
 ---
 
@@ -64,7 +64,7 @@ flowchart LR
 
 | Layer | Suggested choice | Rationale |
 |-------|------------------|-----------|
-| Runtime | Node.js 22 LTS | Matches existing `indexer/` |
+| Runtime | Node.js 22 LTS | Matches existing `packages/indexer/` |
 | Framework | Fastify or Hono | Performance, TS typing |
 | ORM | Drizzle or Prisma | Migrations and type-safety |
 | Auth | JWT (RS256) from this backend + optional refresh v2 | v1 simplicity |

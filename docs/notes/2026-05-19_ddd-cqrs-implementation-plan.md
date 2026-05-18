@@ -1,7 +1,7 @@
-# Plano de implementação: transição para DDD + CQRS leve (`api/`)
+# Plano de implementação: transição para DDD + CQRS leve (`packages/api/`)
 
 **Data:** 2026-05-19  
-**Objetivo:** sequência de entregas **pequenas e reversíveis** que levem o serviço `api/` às regras em [`docs/ARCHITECTURE-RULES.md`](../ARCHITECTURE-RULES.md) e à visão em [`2026-05-18_backend-ddd-cqrs-assessment.md`](2026-05-18_backend-ddd-cqrs-assessment.md), **sem** parar o desenvolvimento de features nem quebrar contratos HTTP `/v1/*` sem versão nova.
+**Objetivo:** sequência de entregas **pequenas e reversíveis** que levem o pacote `packages/api/` às regras em [`docs/ARCHITECTURE-RULES.md`](../ARCHITECTURE-RULES.md) e à visão em [`2026-05-18_backend-ddd-cqrs-assessment.md`](2026-05-18_backend-ddd-cqrs-assessment.md), **sem** parar o desenvolvimento de features nem quebrar contratos HTTP `/v1/*` sem versão nova.
 
 **Princípio operacional:** um **PR = um caso de uso** (ou um grupo mínimo coeso); regressão verificada com smoke/manual + checklist abaixo.
 
@@ -13,7 +13,7 @@
 |---|--------|-------------------|
 | P1 | Ler e alinhar equipa com `ARCHITECTURE-RULES.md` (matriz “quem fala com quem”). | Todos sabem onde colocar código novo. |
 | P2 | Registar decisão em `DECISIONS.md` na raiz do `dupply-backend` (1 parágrafo: “CQRS leve + monólito modular; ports quando extrairmos handlers”). | Ficheiro criado ou secção acrescentada. |
-| P3 | Garantir smoke/manual documentado: `npm run etherfuse:smoke`, fluxo duplicata (curl ou Postman) guardado em `docs/notes/` ou `api/README.md`. | Checklist copiável para cada PR de refactor. |
+| P3 | Garantir smoke/manual documentado: `npm run etherfuse:smoke`, fluxo duplicata (curl ou Postman) guardado em `docs/notes/` ou `packages/api/README.md`. | Checklist copiável para cada PR de refactor. |
 
 ---
 
@@ -22,7 +22,7 @@
 Não é obrigatório criar tudo no primeiro PR; **introduzir pastas vazias + um handler** basta para fixar o padrão.
 
 ```text
-api/src/
+packages/api/src/
 ├── application/
 │   ├── ramp/
 │   │   ├── commands/          # createQuote, createOrder, applyWebhook
@@ -179,7 +179,7 @@ Cumprimento mínimo alinhado à avaliação (secção 8):
 - [ ] Todos os fluxos da secção “Inventário por bounded context” da avaliação têm **handler** em `application/`.  
 - [ ] Repositórios atrás de **ports** (Fase 5) para pelo menos ramp **ou** duplicata completo; idealmente ambos.  
 - [ ] `DECISIONS.md` atualizado.  
-- [ ] `api/README.md` com parágrafo “Estrutura em camadas” apontando para `ARCHITECTURE-RULES.md`.
+- [ ] `packages/api/README.md` com parágrafo “Estrutura em camadas” apontando para `ARCHITECTURE-RULES.md`.
 
 ---
 

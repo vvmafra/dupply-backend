@@ -2,7 +2,7 @@
 
 Registry on-chain de duplicatas descontáveis: **allowlist de issuers**, **`issue`** com commitments (`BytesN<32>`), valores em **centavos (`i128`)**, evento **`DuplicataIssued`** ([`contractevent`](https://developers.stellar.org/docs/build/smart-contracts/getting-started/events)).
 
-O código em `contracts/duplicata-registry/src/` não usa documentação `///` inline; a API e o domínio descrevem-se neste README e em [DEPLOYMENT-testnet.md](./DEPLOYMENT-testnet.md).
+O código em `crates/duplicata-registry/src/` não usa documentação `///` inline; a API e o domínio descrevem-se neste README e em [DEPLOYMENT-testnet.md](./DEPLOYMENT-testnet.md).
 
 ## Toolchain
 
@@ -12,7 +12,7 @@ O código em `contracts/duplicata-registry/src/` não usa documentação `///` i
 
 ## Comandos
 
-Na raiz deste workspace Soroban (`dupply-backend/contracts/duplicata-registry`):
+Na raiz deste workspace Soroban (`dupply-backend/soroban`):
 
 ```bash
 cargo test -p duplicata-registry
@@ -62,10 +62,10 @@ Tipos alinhados a `dupply-frontend` (só documentação; o front **não** é alt
 ## Estrutura
 
 ```text
-contracts/duplicata-registry/
-  Cargo.toml          # workspace
+soroban/
+  Cargo.toml                    # workspace (members: crates/*)
   rust-toolchain.toml
-  contracts/duplicata-registry/
+  crates/duplicata-registry/
     Cargo.toml
     Makefile
     src/

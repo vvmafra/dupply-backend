@@ -40,4 +40,4 @@ docker compose -f docker/docker-compose.postgres.yml down -v   # apaga volume (B
 DATABASE_URL=postgresql://dupply:dupply@127.0.0.1:15432/dupply_local
 ```
 
-*(A API `api/` usa SQLite por omissão; migrar para Postgres implica trocar o dialect Drizzle — fora do âmbito deste compose.)*
+*(O pacote `packages/api` usa SQLite por omissão; migrar para Postgres implica trocar o dialect Drizzle — fora do âmbito deste compose.)*
