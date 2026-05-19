@@ -1,215 +1,215 @@
-# Plano de implementação: transição para DDD + CQRS leve (`packages/api/`)
+# Implementation plan: transition to DDD + light CQRS (`src/`)
 
-**Data:** 2026-05-19  
-**Objetivo:** sequência de entregas **pequenas e reversíveis** que levem o pacote `packages/api/` às regras em [`docs/ARCHITECTURE-RULES.md`](../ARCHITECTURE-RULES.md) e à visão em [`2026-05-18_backend-ddd-cqrs-assessment.md`](2026-05-18_backend-ddd-cqrs-assessment.md), **sem** parar o desenvolvimento de features nem quebrar contratos HTTP `/v1/*` sem versão nova.
+**Date:** 2026-05-19  
+**Goal:** a sequence of **small, reversible** deliveries that move code in `src/` toward the rules in [`docs/ARCHITECTURE-RULES.md`](../ARCHITECTURE-RULES.md) and the vision in [`2026-05-18_backend-ddd-cqrs-assessment.md`](2026-05-18_backend-ddd-cqrs-assessment.md), **without** stopping feature work or breaking HTTP `/v1/*` contracts without a new version.
 
-**Princípio operacional:** um **PR = um caso de uso** (ou um grupo mínimo coeso); regressão verificada com smoke/manual + checklist abaixo.
-
----
-
-## 1. Pré-requisitos (antes da Fase 1)
-
-| # | Tarefa | Critério de pronto |
-|---|--------|-------------------|
-| P1 | Ler e alinhar equipa com `ARCHITECTURE-RULES.md` (matriz “quem fala com quem”). | Todos sabem onde colocar código novo. |
-| P2 | Registar decisão em `DECISIONS.md` na raiz do `dupply-backend` (1 parágrafo: “CQRS leve + monólito modular; ports quando extrairmos handlers”). | Ficheiro criado ou secção acrescentada. |
-| P3 | Garantir smoke/manual documentado: `npm run etherfuse:smoke`, fluxo duplicata (curl ou Postman) guardado em `docs/notes/` ou `packages/api/README.md`. | Checklist copiável para cada PR de refactor. |
+**Operating principle:** one **PR = one use case** (or a minimal cohesive group); regression checked with smoke/manual + checklist below.
 
 ---
 
-## 2. Estrutura de pastas alvo (incremental)
+## 1. Prerequisites (before Phase 1)
 
-Não é obrigatório criar tudo no primeiro PR; **introduzir pastas vazias + um handler** basta para fixar o padrão.
+| # | Task | Done when |
+|---|------|-----------|
+| P1 | Read and align the team on `ARCHITECTURE-RULES.md` (the “who calls whom” matrix). | Everyone knows where new code belongs. |
+| P2 | Record the decision in root `DECISIONS.md` (one paragraph: “light CQRS + modular monolith; ports when we extract handlers”). | File created or section added. |
+| P3 | Document smoke/manual: `npm run etherfuse:smoke`, trade-bill flow (curl or Postman) saved in `docs/notes/` or `API.md`. | Copy-paste checklist for each refactor PR. |
+
+---
+
+## 2. Target folder structure (incremental)
+
+You do not need everything in the first PR; **empty folders + one handler** is enough to set the pattern.
 
 ```text
-packages/api/src/
+src/
 ├── application/
 │   ├── ramp/
 │   │   ├── commands/          # createQuote, createOrder, applyWebhook
-│   │   ├── queries/         # getAssets, getOrderById
-│   │   └── errors.ts        # opcional: erros de aplicação + map HTTP
-│   ├── duplicata/
+│   │   ├── queries/           # getAssets, getOrderById
+│   │   └── errors.ts          # optional: application errors + HTTP map
+│   ├── tradeBill/
 │   │   ├── commands/
 │   │   └── queries/
-│   └── ports/               # opcional na Fase 5: interfaces de repositório
+│   └── ports/                 # optional in Phase 5: repository interfaces
 ├── infrastructure/
-│   └── persistence/         # opcional na Fase 5: drizzle repos
-├── routes/v1/               # mantém registo Fastify; handlers finos
+│   └── persistence/           # optional in Phase 5: drizzle repos
+├── routes/v1/                 # keep Fastify registration; thin handlers
 ├── domain/
-│   ├── duplicata/           # já existe
-│   └── ramp/                # Fase 6 (opcional): VOs / políticas
-├── integrations/            # ACL; sem mudança obrigatória de pasta na Fase 1–4
-└── db/                      # schema + migrate; repos podem importar daqui
+│   ├── tradeBill/             # exists
+│   └── ramp/                  # Phase 6 (optional): VOs / policies
+├── integrations/              # ACL; no mandatory folder move in Phases 1–4
+└── db/                        # schema + migrate; repos may import from here
 ```
 
 ---
 
-## 3. Fases de implementação
+## 3. Implementation phases
 
-### Fase 1 — Esqueleto de aplicação + composição
+### Phase 1 — Application skeleton + composition
 
-| Ordem | Entrega | Detalhes |
-| ----- | ------- | -------- |
-| 1.1 | Pasta `application/` + tipo `AppContext` ou `Deps` | Objeto passado a handlers: `{ db, config }` + fábrica de `EtherfuseClient` onde fizer sentido. |
-| 1.2 | Função utilitária `registerRampRoutes` **só** delega | Ex.: `createRampQuoteHandler(deps)` importado de `application/ramp/commands/createRampQuote.ts`. |
-| 1.3 | `server.ts` | Continua a criar `db`, `config`, a registar plugins; **não** crescer com lógica de negócio. |
+| Order | Deliverable | Details |
+| ----- | ----------- | ------- |
+| 1.1 | `application/` folder + `AppContext` or `Deps` type | Object passed to handlers: `{ db, config }` + `EtherfuseClient` factory where appropriate. |
+| 1.2 | `registerRampRoutes` **only** delegates | e.g. `createRampQuoteHandler(deps)` from `application/ramp/commands/createRampQuote.ts`. |
+| 1.3 | `server.ts` | Still creates `db`, `config`, registers plugins; **must not** grow business logic. |
 
-**Critério de pronto:** `ramp.ts` tem **pelo menos um** endpoint delegado num ficheiro `application/ramp/...` (pode ser o mais simples primeiro: `GET /v1/ramp/assets` como **query**).
+**Done when:** `ramp.ts` has **at least one** endpoint delegated to `application/ramp/...` (simplest first: `GET /v1/ramp/assets` as a **query**).
 
-**Esforço:** M.
+**Effort:** M.
 
 ---
 
-### Fase 2 — Rampa: extrair comandos e consultas (Etherfuse)
+### Phase 2 — Ramp: extract commands and queries (Etherfuse)
 
-Ordem sugerida (do mais simples ao mais acoplado):
+Suggested order (simplest to most coupled):
 
-| # | Caso de uso | Tipo | Ficheiro sugerido | Notas |
-|---|-------------|------|-------------------|--------|
-| 2.1 | `GET /v1/ramp/assets` | Query | `application/ramp/queries/getRampAssets.ts` | Só chama `EtherfuseClient`; sem BD. |
-| 2.2 | `GET /v1/ramp/orders/:id` | Query | `application/ramp/queries/getRampOrderById.ts` | Leitura Drizzle. |
+| # | Use case | Type | Suggested file | Notes |
+|---|----------|------|----------------|-------|
+| 2.1 | `GET /v1/ramp/assets` | Query | `application/ramp/queries/getRampAssets.ts` | Calls `EtherfuseClient` only; no DB. |
+| 2.2 | `GET /v1/ramp/orders/:id` | Query | `application/ramp/queries/getRampOrderById.ts` | Drizzle read. |
 | 2.3 | `POST /v1/ramp/quotes` | Command | `application/ramp/commands/createRampQuote.ts` | Etherfuse + insert `ramp_quotes`. |
-| 2.4 | `POST /v1/ramp/orders` | Command | `application/ramp/commands/createRampOrder.ts` | Valida quote existente + Etherfuse + insert `ramp_orders`. |
+| 2.4 | `POST /v1/ramp/orders` | Command | `application/ramp/commands/createRampOrder.ts` | Validate quote + Etherfuse + insert `ramp_orders`. |
 
-**Critério de pronto:** `routes/v1/ramp.ts` **< ~80 linhas** de lógica total (só Zod + chamada handler + `mapRampErrorToReply`); comportamento JSON idêntico ao atual.
+**Done when:** `routes/v1/ramp.ts` **< ~80 lines** of total logic (only Zod + handler call + `mapRampErrorToReply`); JSON behavior unchanged.
 
-**Testes:** unitário do handler com `db` mock ou SQLite `:memory:` (opcional no PR 2.1–2.2; **recomendado** antes de fechar Fase 2).
+**Tests:** unit handler with mock `db` or SQLite `:memory:` (optional in PRs 2.1–2.2; **recommended** before closing Phase 2).
 
-**Esforço:** L (vários PRs).
-
----
-
-### Fase 3 — Webhook Etherfuse
-
-| Ordem | Entrega | Detalhes |
-| ----- | ------- | -------- |
-| 3.1 | `ApplyRampWebhookCommand` (nome ilustrativo) | `application/ramp/commands/applyRampWebhook.ts`: verificação de assinatura (delegar a `integrations/etherfuse/webhook-verify`) + atualização `ramp_orders`. |
-| 3.2 | Idempotência | Se a payload tiver id de evento, persistir/processar uma vez (tabela ou coluna futura — só se a API garantir id; senão documentar “best effort”). |
-
-**Critério de pronto:** `webhook-etherfuse.ts` fino; mesmos status HTTP que hoje.
-
-**Esforço:** S–M.
+**Effort:** L (several PRs).
 
 ---
 
-### Fase 4 — Duplicata: comandos e consultas
+### Phase 3 — Etherfuse webhook
 
-| # | Caso de uso | Tipo | Ficheiro sugerido |
-|---|-------------|------|-------------------|
-| 4.1 | `POST /v1/duplicatas` | Command | `application/duplicata/commands/simulateDuplicataIssue.ts` |
-| 4.2 | `POST /v1/duplicatas/:id/confirm` | Command | `application/duplicata/commands/confirmDuplicataTx.ts` |
-| 4.3 | `GET /v1/duplicatas/:id` | Query | `application/duplicata/queries/getDuplicataById.ts` |
-| 4.4 | `GET /v1/duplicatas/on-chain/:chainId` | Query | `application/duplicata/queries/getDuplicataOnChain.ts` |
+| Order | Deliverable | Details |
+| ----- | ----------- | ------- |
+| 3.1 | `ApplyRampWebhookCommand` (illustrative name) | `application/ramp/commands/applyRampWebhook.ts`: signature check (delegate to `integrations/etherfuse/webhook-verify`) + `ramp_orders` update. |
+| 3.2 | Idempotency | If payload has event id, persist/process once (future table/column — only if API guarantees id; else document “best effort”). |
 
-**Critério de pronto:** `routes/v1/duplicatas.ts` apenas orquestra HTTP; `domain/duplicata` continua sem I/O; `integrations/registry` chamado **só** a partir de application (ou continua a ser chamado a partir de application após mover imports das rotas).
+**Done when:** `webhook-etherfuse.ts` is thin; same HTTP status codes as today.
 
-**Esforço:** L.
+**Effort:** S–M.
 
 ---
 
-### Fase 5 — Ports e repositórios (infra)
+### Phase 4 — Trade bill: commands and queries
 
-| Ordem | Entrega | Detalhes |
-| ----- | ------- | -------- |
-| 5.1 | Interfaces em `application/ports/` | `RampQuoteRepository`, `RampOrderRepository`, `DuplicataDraftRepository`, `DuplicataChainRepository` — métodos mínimos (`save`, `findById`, …). |
-| 5.2 | Implementações Drizzle | `infrastructure/persistence/*.ts` importam `schema.ts` e implementam as interfaces. |
-| 5.3 | Composição em `server.ts` ou `compositionRoot.ts` | Instanciar repos reais e injetar nos handlers. |
+| # | Use case | Type | Suggested file |
+|---|----------|------|----------------|
+| 4.1 | `POST /v1/trade-bills` | Command | `application/tradeBill/commands/simulateTradeBillIssue.ts` |
+| 4.2 | `POST /v1/trade-bills/:id/confirm` | Command | `application/tradeBill/commands/confirmTradeBillTx.ts` |
+| 4.3 | `GET /v1/trade-bills/:id` | Query | `application/tradeBill/queries/getTradeBillById.ts` |
+| 4.4 | `GET /v1/trade-bills/on-chain/:chainId` | Query | `application/tradeBill/queries/getTradeBillOnChain.ts` |
 
-**Critério de pronto:** handlers **não** importam `drizzle-orm` diretamente; testes dos handlers usam **fakes** das interfaces.
+**Done when:** `routes/v1/trade-bills.ts` only orchestrates HTTP; `domain/tradeBill` stays I/O-free; `integrations/registry` called **only** from application (or continues after moving imports from routes).
 
-**Esforço:** L.
-
----
-
-### Fase 6 — Domínio `ramp` (opcional)
-
-| Entrega | Quando fazer |
-| ------- | ------------- |
-| `domain/ramp/` com VOs (`MoneyAmount`, política de `resolveAssetIdentifiers`) | Quando a lógica de ramp duplicar-se ou ficar difícil de testar sem tipos de domínio. |
-
-**Critério de pronto:** regras que não são “formato HTTP” nem “colunas SQL” vivem em `domain/ramp`.
-
-**Esforço:** M (depende do apetite).
+**Effort:** L.
 
 ---
 
-### Fase 7 — CQRS “mais forte” (opcional)
+### Phase 5 — Ports and repositories (infra)
 
-Conforme [`2026-05-18_backend-ddd-cqrs-assessment.md`](2026-05-18_backend-ddd-cqrs-assessment.md) secção 5 Fase D:
+| Order | Deliverable | Details |
+| ----- | ----------- | ------- |
+| 5.1 | Interfaces in `application/ports/` | `RampQuoteRepository`, `RampOrderRepository`, `TradeBillDraftRepository`, `TradeBillChainRepository` — minimal methods (`save`, `findById`, …). |
+| 5.2 | Drizzle implementations | `infrastructure/persistence/*.ts` import `schema.ts` and implement interfaces. |
+| 5.3 | Composition in `server.ts` or `compositionRoot.ts` | Instantiate real repos and inject into handlers. |
 
-- DTOs de leitura distintos para `GET` público.  
-- Fila para webhook (BullMQ) só com requisito de volume/retries.  
-- Read replica / views só com métrica ou requisito formal.
+**Done when:** handlers **do not** import `drizzle-orm` directly; handler tests use **fakes** of the interfaces.
 
-**Esforço:** variável; **não** bloquear Fases 1–5.
+**Effort:** L.
 
 ---
 
-## 4. Ordem global recomendada (resumo)
+### Phase 6 — `ramp` domain (optional)
+
+| Deliverable | When |
+| ----------- | ---- |
+| `domain/ramp/` with VOs (`MoneyAmount`, `resolveAssetIdentifiers` policy) | When ramp logic duplicates or becomes hard to test without domain types. |
+
+**Done when:** rules that are neither “HTTP format” nor “SQL columns” live in `domain/ramp`.
+
+**Effort:** M (depends on appetite).
+
+---
+
+### Phase 7 — “Stronger” CQRS (optional)
+
+Per [`2026-05-18_backend-ddd-cqrs-assessment.md`](2026-05-18_backend-ddd-cqrs-assessment.md) section 5 Phase D:
+
+- Distinct read DTOs for public `GET`.  
+- Webhook queue (BullMQ) only with volume/retry requirements.  
+- Read replica / views only with metrics or formal requirement.
+
+**Effort:** variable; **must not** block Phases 1–5.
+
+---
+
+## 4. Global order (summary)
 
 ```text
-Fase 1 (esqueleto + 1 query ramp)
-  → Fase 2 (restante ramp)
-  → Fase 3 (webhook)
-  → Fase 4 (duplicata)
-  → Fase 5 (ports/repos)
-  → Fase 6–7 (opcional)
+Phase 1 (skeleton + 1 ramp query)
+  → Phase 2 (remaining ramp)
+  → Phase 3 (webhook)
+  → Phase 4 (trade bill)
+  → Phase 5 (ports/repos)
+  → Phase 6–7 (optional)
 ```
 
-**Motivo:** ramp concentra mais linhas em `ramp.ts` e **não** partilha domínio com duplicata — baixo risco de conflitos de merge; duplicata já tem `domain/` e exige cuidado com contrato Soroban.
+**Rationale:** ramp concentrates more lines in `ramp.ts` and **does not** share domain with trade bill — low merge-conflict risk; trade bill already has `domain/` and needs care with the Soroban contract.
 
 ---
 
-## 5. Checklist por PR (copiar para descrição do PR)
+## 5. Per-PR checklist (copy into PR description)
 
-- [ ] URLs e corpos de resposta `/v1/*` mantidos (ou documentada alteração + versão).  
-- [ ] Imports respeitam [`ARCHITECTURE-RULES.md`](../ARCHITECTURE-RULES.md) secção 2.1.  
-- [ ] Caso de uso identificado como **Command** ou **Query** no título ou corpo do PR.  
-- [ ] Smoke/manual executado (listar comando na descrição).  
-- [ ] Sem `process.env` novo fora de `config.ts`.  
-- [ ] Sem imports cruzados **ramp ↔ duplicata** (regras de bounded context).
-
----
-
-## 6. Definição de “transição concluída” (MVP arquitetural)
-
-Cumprimento mínimo alinhado à avaliação (secção 8):
-
-- [ ] Rotas `ramp`, `duplicatas` e `webhook-etherfuse` **finas** (≤ ~50 linhas de lógica por handler HTTP, só delegação + erro).  
-- [ ] Todos os fluxos da secção “Inventário por bounded context” da avaliação têm **handler** em `application/`.  
-- [ ] Repositórios atrás de **ports** (Fase 5) para pelo menos ramp **ou** duplicata completo; idealmente ambos.  
-- [ ] `DECISIONS.md` atualizado.  
-- [ ] `packages/api/README.md` com parágrafo “Estrutura em camadas” apontando para `ARCHITECTURE-RULES.md`.
+- [ ] `/v1/*` URLs and response bodies unchanged (or documented change + version).  
+- [ ] Imports follow [`ARCHITECTURE-RULES.md`](../ARCHITECTURE-RULES.md) section 2.1.  
+- [ ] Use case labeled **Command** or **Query** in PR title or body.  
+- [ ] Smoke/manual run (list command in description).  
+- [ ] No new `process.env` outside `config.ts`.  
+- [ ] No cross-imports **ramp ↔ tradeBill** (bounded context rules).
 
 ---
 
-## 7. Riscos e mitigação
+## 6. Definition of “transition complete” (architectural MVP)
 
-| Risco | Mitigação |
-| ----- | ---------- |
-| PR gigante | Cortar por endpoint/caso de uso; não misturar ramp + duplicata no mesmo PR. |
-| Regressão em Etherfuse sandbox | Manter `etherfuse-smoke` verde em CI ou antes de merge manual. |
-| Conflitos de tipos Zod duplicados | Um schema por payload; rotas fazem `parse` e passam **tipo já validado** ao handler. |
+Minimum aligned with assessment (section 8):
 
-**Rollback:** `git revert` do PR; fases independentes facilitam.
-
----
-
-## 8. Referências internas
-
-| Documento | Uso |
-| --------- | --- |
-| [`docs/ARCHITECTURE-RULES.md`](../ARCHITECTURE-RULES.md) | Regras normativas e matriz de dependências. |
-| [`2026-05-18_backend-ddd-cqrs-assessment.md`](2026-05-18_backend-ddd-cqrs-assessment.md) | Contexto, diagrama alvo e inventário comando/query. |
-| [`2026-05-16_dupply-backend-v1-plan.md`](2026-05-16_dupply-backend-v1-plan.md) | Visão de produto v1. |
-| [`2026-05-18_v1-duplicata-contract-integration-architecture.md`](2026-05-18_v1-duplicata-contract-integration-architecture.md) | Fluxo duplicata + contrato. |
+- [ ] `ramp`, `trade-bills`, and `webhook-etherfuse` routes are **thin** (≤ ~50 lines of logic per HTTP handler, delegation + error only).  
+- [ ] All flows in the assessment “inventory by bounded context” have a handler in `application/`.  
+- [ ] Repositories behind **ports** (Phase 5) for at least ramp **or** full trade bill; ideally both.  
+- [ ] `DECISIONS.md` updated.  
+- [ ] `API.md` includes a short “layered structure” paragraph pointing to `ARCHITECTURE-RULES.md`.
 
 ---
 
-## 9. Documentação oficial (contexto teórico)
+## 7. Risks and mitigation
+
+| Risk | Mitigation |
+| ---- | ---------- |
+| Giant PR | Split by endpoint/use case; do not mix ramp + trade bill in one PR. |
+| Etherfuse sandbox regression | Keep `etherfuse-smoke` green in CI or before manual merge. |
+| Duplicate Zod types | One schema per payload; routes `parse` and pass **validated** types to handlers. |
+
+**Rollback:** `git revert` the PR; independent phases make this easy.
+
+---
+
+## 8. Internal references
+
+| Document | Use |
+| -------- | --- |
+| [`docs/ARCHITECTURE-RULES.md`](../ARCHITECTURE-RULES.md) | Normative rules and dependency matrix. |
+| [`2026-05-18_backend-ddd-cqrs-assessment.md`](2026-05-18_backend-ddd-cqrs-assessment.md) | Context, target diagram, command/query inventory. |
+| [`2026-05-16_dupply-backend-v1-plan.md`](2026-05-16_dupply-backend-v1-plan.md) | Product v1 vision. |
+| [`2026-05-18_v1-duplicata-contract-integration-architecture.md`](2026-05-18_v1-duplicata-contract-integration-architecture.md) | Trade bill flow + contract. |
+
+---
+
+## 9. Official documentation (theory)
 
 - CQRS — https://martinfowler.com/bliki/CQRS.html  
-- Padrão CQRS (Microsoft) — https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs  
+- CQRS pattern (Microsoft) — https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs  
 - DDD Reference — https://www.domainlanguage.com/ddd/reference/  
 
-Legenda de **esforço:** S = pequeno (&lt; 1 dia), M = médio (1–2 dias), L = vários dias / vários PRs.
+**Effort legend:** S = small (&lt; 1 day), M = medium (1–2 days), L = multiple days / multiple PRs.

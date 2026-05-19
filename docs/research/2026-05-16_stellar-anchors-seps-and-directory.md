@@ -68,7 +68,7 @@ Useful to discover **who** supports **which** asset/country and to validate `ste
 
 ---
 
-## 5. Relationship to Soroban and `duplicata-registry`
+## 5. Relationship to Soroban and the trade-bill registry (`duplicata-registry` crate)
 
 - The current **Soroban** contract records **duplicatas** and does **not** implement a ramp.  
 - A **ramp** (fiat↔stable or stable↔bank account) is, in practice, **off-chain + Stellar transactions** coordinated by a provider.  

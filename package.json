@@ -1,19 +1,36 @@
 {
   "name": "dupply-backend",
   "private": true,
-  "description": "Dupply monorepo: HTTP API, indexer skeleton, Soroban contracts",
-  "workspaces": [
-    "packages/*"
-  ],
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Dupply backend: Fastify HTTP API (src/), Soroban contracts (soroban/)",
   "scripts": {
-    "dev:api": "npm run dev -w @dupply/api",
-    "build:api": "npm run build -w @dupply/api",
-    "start:api": "npm run start -w @dupply/api",
-    "dev:indexer": "npm run dev -w @dupply/indexer",
-    "start:indexer": "npm run start -w @dupply/indexer",
-    "etherfuse:smoke": "npm run etherfuse:smoke -w @dupply/api"
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "build": "tsc -p tsconfig.build.json",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:push": "drizzle-kit push",
+    "etherfuse:smoke": "tsx scripts/etherfuse-smoke.ts"
   },
   "engines": {
     "node": ">=20"
+  },
+  "dependencies": {
+    "@stellar/stellar-base": "^14.0.0",
+    "@stellar/stellar-sdk": "^14.6.1",
+    "better-sqlite3": "^11.10.0",
+    "buffer": "^6.0.3",
+    "canonicalize": "^2.1.0",
+    "drizzle-orm": "^0.44.2",
+    "fastify": "^5.2.2",
+    "zod": "^3.24.4"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^22.13.5",
+    "drizzle-kit": "^0.31.1",
+    "tsx": "^4.19.3",
+    "typescript": "^5.7.3"
   }
 }

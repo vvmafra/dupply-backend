@@ -1,148 +1,143 @@
-# Regras de arquitetura — `dupply-backend` / pacote `packages/api/`
+# Architecture rules — `dupply-backend` / HTTP API in `src/`
 
-**Objetivo:** contrato de engenharia para evolução do backend em direção a **DDD** (domínios claros) e **CQRS leve** (comandos vs consultas), sem prescricao de ferramentas desnecessárias.  
-**Contexto:** ver nota `[docs/notes/2026-05-18_backend-ddd-cqrs-assessment.md](notes/2026-05-18_backend-ddd-cqrs-assessment.md)`.  
-**Âmbito:** código em `packages/api/src/` (Fastify, Drizzle, integrações Etherfuse e Soroban). Contrato Rust em `soroban/` segue as regras do próprio crate.
-
----
-
-## 1. Princípios (ordem de prioridade)
-
-1. **Fronteiras explícitas** entre **Rampa** (Etherfuse) e **Duplicata** (registry Soroban): pastas, nomes e imports não devem misturar regras de um contexto no outro sem um caso de uso claro.
-2. **Dependências apontam para dentro:** camadas externas dependem das internas; `domain` **não** importa Fastify, Drizzle nem `integrations` (exceto tipos puros se inevitável — evitar).
-3. **Integrações são ACL** (*anti-corruption layer*): adaptam APIs terceiras (HTTP Etherfuse, RPC Soroban) ao que o domínio/caso de uso precisa.
-4. **CQRS como disciplina:** tudo o que **muda estado** é tratado como **comando**; tudo o que **só lê** é **consulta**. Mesmo antes de existir pastas `commands/` / `queries/`, o nome do fluxo e o ficheiro devem deixar isso óbvio.
+**Purpose:** engineering contract for evolving the backend toward **DDD** (clear domains) and **light CQRS** (commands vs queries), without unnecessary tooling.  
+**Context:** see [`docs/notes/2026-05-18_backend-ddd-cqrs-assessment.md`](notes/2026-05-18_backend-ddd-cqrs-assessment.md).  
+**Scope:** code in `src/` (Fastify, Drizzle, Etherfuse and Soroban integrations). The Rust contract in `soroban/` follows that crate’s own conventions.
 
 ---
 
-## 2. Camadas e dependências
+## 1. Principles (priority order)
 
+1. **Explicit boundaries** between **Ramp** (Etherfuse) and **Trade bill** (Soroban registry): folders, names, and imports must not mix rules across contexts without a clear use case.
+2. **Dependencies point inward:** outer layers depend on inner ones; `domain` must **not** import Fastify, Drizzle, or `integrations` (pure types only if unavoidable — avoid).
+3. **Integrations are an ACL** (*anti-corruption layer*): they adapt third-party APIs (Etherfuse HTTP, Soroban RPC) to what the domain / use case needs.
+4. **CQRS as discipline:** anything that **mutates state** is a **command**; anything that **only reads** is a **query**. Even before `commands/` / `queries/` folders exist, file and flow names should make that obvious.
 
-| Camada                                                           | Responsabilidade                                           | Regras                                                                                                                                                                   |
-| ---------------------------------------------------------------- | ---------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **HTTP** (`routes/`, `plugins/`, `server.ts`)                    | Transporte, auth, validação de formato (Zod), status codes | **Obrigatório:** rotas **finas** — sem orquestração longa (> ~50 linhas por handler). **Proibido:** regras de negócio que não sejam tradução de erro ou parse.           |
-| **Application** (`application/` quando existir)                  | Casos de uso: orquestrar domínio + ports + transações      | **Obrigatório:** novos fluxos mutáveis passam por aqui. **Recomendado:** um handler por caso de uso (`CreateRampQuote`, `ConfirmDuplicataTx`, …).                        |
-| **Domain** (`domain/`)                                           | Invariantes, linguagem ubíqua, agregados/serviços          | **Obrigatório:** validações que definem “o que é válido” para Dupply/contrato. **Proibido:** SQL, cliente HTTP, env direto (passar valores já resolvidos).               |
-| **Integrations** (`integrations/`)                               | Clientes externos, assinaturas webhook, parsing bruto      | **Obrigatório:** isolamento de SDKs e URLs. **Proibido:** conhecer detalhes de schema HTTP público Dupply (isso fica em `routes` + Zod).                                 |
-| **Infrastructure** (`db/`, futuro `infrastructure/persistence/`) | Drizzle, migrações, implementação de repositórios          | **Obrigatório:** única fonte de verdade de schema em `schema.ts` (+ migrações). **Recomendado:** repositórios por agregado/tabela quando a camada `application` existir. |
-| **Generated** (`generated/`)                                     | Bindings Soroban                                           | **Proibido:** editar à mão exceto ajustes documentados no README (regenerar a partir do Wasm).                                                                           |
+---
 
+## 2. Layers and dependencies
 
-**Direção permitida de imports (resumo):**
+| Layer | Responsibility | Rules |
+| ----- | -------------- | ----- |
+| **HTTP** (`routes/`, `plugins/`, `server.ts`) | Transport, auth, format validation (Zod), status codes | **Required:** **thin** routes — no long orchestration (> ~50 lines per handler). **Forbidden:** business rules beyond error translation or parsing. |
+| **Application** (`application/` when present) | Use cases: orchestrate domain + ports + transactions | **Required:** new mutating flows go here. **Recommended:** one handler per use case (`CreateRampQuote`, `ConfirmTradeBillTx`, …). |
+| **Domain** (`domain/`) | Invariants, ubiquitous language, aggregates/services | **Required:** validations that define what is valid for Dupply / the contract. **Forbidden:** SQL, HTTP clients, raw `env` (pass resolved values in). |
+| **Integrations** (`integrations/`) | External clients, webhook signatures, raw parsing | **Required:** isolate SDKs and URLs. **Forbidden:** knowing details of Dupply’s public HTTP schema (that stays in `routes` + Zod). |
+| **Infrastructure** (`db/`, future `infrastructure/persistence/`) | Drizzle, migrations, repository implementations | **Required:** single source of truth in `schema.ts` (+ migrations). **Recommended:** repositories per aggregate/table when the `application` layer exists. |
+| **Generated** (`generated/`) | Soroban bindings | **Forbidden:** hand-editing except documented tweaks in README (regenerate from Wasm). |
 
-`routes` → `application` → `domain` → *(nada abaixo)*  
-`routes` / `application` → `integrations`, `db` *(até haver ports, imports diretos a `db` ficam na application ou routes — migrar para ports quando introduzidos)*  
-`domain` → **não** → `integrations`, `db`, `fastify`
+**Allowed import direction (summary):**
 
-### 2.1 Quem pode falar com quem
+`routes` → `application` → `domain` → *(nothing below)*  
+`routes` / `application` → `integrations`, `db` *(until ports exist, direct `db` imports may live in application or routes — migrate when ports are introduced)*  
+`domain` → **must not** → `integrations`, `db`, `fastify`
 
-Legenda: **Sim** = import ou chamada permitidos. **Evitar** = só dívida legada ou exceção documentada; não expandir. **Não** = proibido por estas regras.
+### 2.1 Who may call whom
 
-Matriz **camada chama camada** (linha = quem chama, coluna = quem é chamado):
+Legend: **Yes** = allowed. **Avoid** = legacy debt or documented exception only; do not expand. **No** = forbidden by these rules.
 
-| Chama ↓ / Chamado → | HTTP (routes, plugins) | Application | Domain | Integrations | Infrastructure (`db/`, repos) | `generated/` | `config` |
-| ------------------- | ---------------------- | ----------- | ------ | ------------ | ------------------------------- | ------------ | -------- |
-| **HTTP**            | — (mesmo módulo)       | Sim         | Sim¹   | Evitar²      | Evitar²                         | Evitar³      | Sim      |
-| **Application**     | **Não**                | —           | Sim    | Sim          | Sim                             | Sim⁴         | Sim      |
-| **Domain**          | **Não**                | **Não**     | —⁵     | **Não**      | **Não**                         | Evitar⁶      | **Não**  |
-| **Integrations**    | **Não**                | **Não**     | **Não**| —⁷           | **Não**                         | Sim⁴         | **Não**⁸ |
-| **Infrastructure** | **Não**                | **Não**     | **Não**| **Não**      | —                               | **Não**      | **Não**⁸ |
+**Layer calls layer** matrix (row = caller, column = callee):
 
-¹ **HTTP → Domain:** apenas validação, tipos e funções puras (ex.: Zod + `validateIssueInvariants`). Sem I/O.  
-² **HTTP → Integrations / db:** permitido no código legado; novos fluxos devem passar por **Application** (ou handler dedicado equivalente).  
-³ **HTTP → generated:** evitar; preferir passar pelo fluxo registry/application.  
-⁴ **Application / Integrations → generated:** bindings do contrato Soroban; uso concentrado em integração registry + casos de uso duplicata.  
-⁵ **Domain → Domain:** imports entre módulos do mesmo contexto (`duplicata/*`) permitidos; manter acíclico.  
-⁶ **Domain → generated:** evitar; preferir tipos próprios do domínio e mapear na borda (application ou `map-issue-payload`).  
-⁷ **Integrations → Integrations:** apenas auxiliares partilhados na mesma pasta (ex.: `stellar/network` usado por `registry`); **não** importar `etherfuse` a partir de `registry` nem o inverso.  
-⁸ **Integrations / Infrastructure → config:** valores já injetados pelo compositor (`server` / factory de handlers); **não** ler `process.env` dentro de `integrations` ou `db`.
+| Caller ↓ / Callee → | HTTP | Application | Domain | Integrations | Infrastructure | `generated/` | `config` |
+| ------------------- | ---- | ----------- | ------ | ------------- | ---------------- | ------------ | -------- |
+| **HTTP** | — | Yes | Yes¹ | Avoid² | Avoid² | Avoid³ | Yes |
+| **Application** | **No** | — | Yes | Yes | Yes | Yes⁴ | Yes |
+| **Domain** | **No** | **No** | —⁵ | **No** | **No** | Avoid⁶ | **No** |
+| **Integrations** | **No** | **No** | **No** | —⁷ | **No** | Yes⁴ | **No**⁸ |
+| **Infrastructure** | **No** | **No** | **No** | **No** | — | **No** | **No**⁸ |
 
-**Bounded contexts (Rampa vs Duplicata):**
+¹ **HTTP → Domain:** validation, types, and pure functions only (e.g. Zod + `validateIssueInvariants`). No I/O.  
+² **HTTP → Integrations / db:** allowed in legacy code; new flows should go through **Application**.  
+³ **HTTP → generated:** avoid; prefer registry / application flow.  
+⁴ **Application / Integrations → generated:** Soroban contract bindings; concentrated in registry integration + trade-bill use cases.  
+⁵ **Domain → Domain:** imports within the same context (`tradeBill/*`) allowed; keep acyclic.  
+⁶ **Domain → generated:** avoid; prefer domain types and map at the edge (`map-issue-payload` or application).  
+⁷ **Integrations → Integrations:** only shared helpers in the same area (e.g. `stellar/network` used by `registry`); **do not** import `etherfuse` from `registry` or vice versa.  
+⁸ **Integrations / Infrastructure → config:** values injected by the composer (`server` / handler factory); **do not** read `process.env` inside `integrations` or `db`.
 
-| Origem | Destino | Regra |
-| ------ | ------- | ----- |
-| Código sob `routes/v1/ramp`, `integrations/etherfuse`, futuro `domain/ramp` | `domain/duplicata`, `integrations/registry` | **Não** acoplar (sem imports cruzados). Exceção: infra partilhada (`db`, `config`, util genérico sem regra de negócio). |
-| Código sob duplicata (`routes` duplicatas, `domain/duplicata`, `integrations/registry`) | `integrations/etherfuse`, futuro `domain/ramp` | **Não** acoplar. |
+**Bounded contexts (Ramp vs trade bill):**
 
-**Resumo em uma frase:** só **HTTP** e **Application** tocam o mundo exterior (HTTP, BD, clientes); **Domain** só regras e tipos; **Integrations** só protocolos externos; **Infrastructure** só persistência e migrações.
+| From | To | Rule |
+| ---- | -- | ---- |
+| Code under `routes/v1/ramp`, `integrations/etherfuse`, future `domain/ramp` | `domain/tradeBill`, `integrations/registry` | **No** cross-imports. Exception: shared infra (`db`, `config`, generic helpers with no business rules). |
+| Code under trade bill (`routes/v1/trade-bills`, `domain/tradeBill`, `integrations/registry`) | `integrations/etherfuse`, future `domain/ramp` | **No** cross-imports. |
+
+**One-line summary:** only **HTTP** and **Application** touch the outside world (HTTP, DB, clients); **Domain** is rules and types only; **Integrations** is external protocols; **Infrastructure** is persistence and migrations.
 
 ---
 
 ## 3. CQRS
 
-- **Comando:** cria ou altera dados persistidos, chama side-effect externo mutável (criar quote/order, simular `issue`, confirmar tx, aplicar webhook). Deve ser **nomeado** no imperativo (`CreateRampOrder`, não `handlePost`).  
-- **Consulta:** apenas lê BD ou serviços externos de leitura; **sem** `insert`/`update`/`delete` nem efeitos colaterais observáveis (exceto logs/métricas).  
-- **Recomendado:** ficheiros ou pastas separados `commands` vs `queries` quando se tocar num módulo em refactor.  
-- **Permitido:** partilhar o mesmo modelo físico de BD entre leitura e escrita na fase atual; read models / views só quando houver requisito de performance ou relatórios.
+- **Command:** creates or updates persisted data, or calls a mutating external side effect (create quote/order, simulate `issue`, confirm tx, apply webhook). Name in the imperative (`CreateRampOrder`, not `handlePost`).  
+- **Query:** reads DB or read-only external services only; **no** `insert`/`update`/`delete` or observable side effects (except logs/metrics).  
+- **Recommended:** separate `commands` vs `queries` files/folders when refactoring a module.  
+- **Allowed:** same physical DB model for reads and writes for now; read models / views only when performance or reporting requires it.
 
 ---
 
 ## 4. Bounded contexts
 
+| Context | Typical code today | Rule |
+| ------- | ----------------- | ---- |
+| **Ramp** | `routes/v1/ramp.ts`, `integrations/etherfuse`, webhook | New ramp rules go in `domain/ramp` (when added) or application handlers, **not** in `domain/tradeBill`. |
+| **Trade bill** | `domain/tradeBill`, `integrations/registry`, `routes/v1/trade-bills.ts` | IDs, enums, and hashes stay aligned with the contract; coordinate changes with `soroban/crates/duplicata-registry`. |
 
-| Contexto      | Código típico hoje                                            | Regra                                                                                                                      |
-| ------------- | ------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| **Ramp**      | `routes/v1/ramp.ts`, `integrations/etherfuse`, webhook        | Novas regras de rampa entram em `domain/ramp` (quando criado) ou em handler de application, **não** em `domain/duplicata`. |
-| **Duplicata** | `domain/duplicata`, `integrations/registry`, rotas duplicatas | IDs, enums e hashes alinhados ao contrato; mudanças coordenadas com `soroban/crates/duplicata-registry`.                        |
-
-
-**Correlação rampa ↔ duplicata** (futuro): apenas via **IDs explícitos** na BD ou eventos — sem acoplamento temporal em código (sem “chamar ramp ao confirmar duplicata” sem caso de uso documentado).
+**Future ramp ↔ trade bill correlation:** only via **explicit IDs** in the DB or events — no tight temporal coupling in code (no “call ramp when confirming trade bill” without a documented use case).
 
 ---
 
-## 5. Persistência (Drizzle)
+## 5. Persistence (Drizzle)
 
-- **Obrigatório:** alterações de schema via `schema.ts` + migração gerada/revisada; não alterar só a BD à mão em ambientes partilhados.  
-- **Recomendado:** transações (`db.transaction`) quando um comando tocar em **duas ou mais** linhas que devem ser atómicas.  
-- **Proibido:** strings SQL ad hoc no serviço salvo exceção justificada (relatórios) e documentada.
-
----
-
-## 6. API HTTP e contratos
-
-- **Obrigatório:** validação de entrada com Zod (ou equivalente) na borda HTTP.  
-- **Obrigatório:** erros de domínio mapeados para 4xx/5xx **num sítio** por contexto (função `mapXxxError` ou middleware), não espalhar `reply.code` por dezenas de ramos iguais sem necessidade.  
-- **Recomendado:** manter compatibilidade de JSON nas rotas `/v1/*` documentadas; mudanças quebrantes exigem nova versão (`/v2`) ou changelog explícito.  
-- **Proibido:** expor secrets, JWT completos ou chaves em respostas/logs.
+- **Required:** schema changes via `schema.ts` + reviewed/generated migration; do not hand-edit shared DBs only.  
+- **Recommended:** transactions (`db.transaction`) when a command touches **two or more** rows that must be atomic.  
+- **Forbidden:** ad hoc SQL in the service except justified, documented cases (e.g. reports).
 
 ---
 
-## 7. Configuração e segredos
+## 6. HTTP API and contracts
 
-- **Obrigatório:** novas variáveis em `config.ts` + `.env.example` + menção no `packages/api/README.md` se forem operacionais.  
-- **Proibido:** `process.env` espalhado fora de `config` (exceto testes).
-
----
-
-## 8. Testes
-
-- **Recomendado:** testes unitários em **domain** e **application** (handlers) sem subir servidor HTTP.  
-- **Recomendado:** integrações com Etherfuse/Soroban atrás de interfaces ou fakes em CI; smoke manual/script mantido para sandbox.  
-- **Obrigatório:** regressão em `cargo test` do contrato quando o fluxo duplicata depender de mudanças no Wasm.
+- **Required:** input validation with Zod (or equivalent) at the HTTP edge.  
+- **Required:** map domain errors to 4xx/5xx in **one place** per context (`mapXxxError` or middleware), not scattered identical `reply.code` branches without need.  
+- **Recommended:** keep JSON compatibility on documented `/v1/*` routes; breaking changes need `/v2` or an explicit changelog.  
+- **Forbidden:** expose secrets, full JWTs, or keys in responses/logs.
 
 ---
 
-## 9. Dívida legítima (grandfathering)
+## 7. Configuration and secrets
 
-Código existente em `routes/v1/*.ts` com Drizzle e orquestração inline **não viola** estas regras até ser tocado; ao **alterar** um handler significativamente, **deve** aproximar-se das regras (extrair comando/consulta ou port).
-
----
-
-## 10. Checklist rápido (PR)
-
-- O PR identifica o bounded context (Ramp / Duplicata / Infra partilhada)?  
-- Mutações estão claras como comando e leituras como consulta?  
-- `domain` não ganhou imports de Fastify/Drizzle/cliente HTTP?  
-- `.env.example` / `config` atualizados se houver nova config?  
-- Documentação pública (`README` ou `docs/notes`) atualizada se o comportamento observável mudou?
+- **Required:** new variables in `config.ts` + `.env.example` + mention in `API.md` if operational.  
+- **Forbidden:** scattered `process.env` outside `config` (tests excepted).
 
 ---
 
-## Referências
+## 8. Tests
 
-- Plano de implementação (fases e PRs): [`docs/notes/2026-05-19_ddd-cqrs-implementation-plan.md`](notes/2026-05-19_ddd-cqrs-implementation-plan.md)  
-- Avaliação DDD+CQRS deste repo: [`docs/notes/2026-05-18_backend-ddd-cqrs-assessment.md`](notes/2026-05-18_backend-ddd-cqrs-assessment.md)  
-- CQRS (visão geral): [martinfowler.com/bliki/CQRS.html](https://martinfowler.com/bliki/CQRS.html)  
-- Padrão CQRS (Microsoft): [learn.microsoft.com/en-us/azure/architecture/patterns/cqrs](https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs)  
+- **Recommended:** unit tests for **domain** and **application** (handlers) without starting HTTP.  
+- **Recommended:** Etherfuse/Soroban integrations behind interfaces or fakes in CI; keep manual/script smoke for sandbox.  
+- **Required:** run `cargo test` on the contract when the trade-bill flow depends on Wasm changes.
+
+---
+
+## 9. Legitimate debt (grandfathering)
+
+Existing code in `routes/v1/*.ts` with inline Drizzle orchestration **does not** violate these rules until touched; when **significantly changing** a handler, **move** toward the rules (extract command/query or port).
+
+---
+
+## 10. Quick PR checklist
+
+- Does the PR name the bounded context (Ramp / Trade bill / Shared infra)?  
+- Are mutations clearly commands and reads clearly queries?  
+- Did `domain` avoid new imports of Fastify/Drizzle/HTTP clients?  
+- Are `.env.example` / `config` updated if config changed?  
+- Are `README` or `docs/notes` updated if observable behavior changed?
+
+---
+
+## References
+
+- Implementation plan: [`docs/notes/2026-05-19_ddd-cqrs-implementation-plan.md`](notes/2026-05-19_ddd-cqrs-implementation-plan.md)  
+- DDD+CQRS assessment: [`docs/notes/2026-05-18_backend-ddd-cqrs-assessment.md`](notes/2026-05-18_backend-ddd-cqrs-assessment.md)  
+- CQRS overview: [martinfowler.com/bliki/CQRS.html](https://martinfowler.com/bliki/CQRS.html)  
+- CQRS pattern (Microsoft): [learn.microsoft.com/en-us/azure/architecture/patterns/cqrs](https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs)  
 - DDD Reference: [domainlanguage.com/ddd/reference](https://www.domainlanguage.com/ddd/reference/)
-

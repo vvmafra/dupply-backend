@@ -1,24 +1,24 @@
-# v1 architecture (remainder): duplicata creation integrated with the Soroban contract
+# v1 architecture (remainder): trade bill issuance integrated with the Soroban contract
 
 **Date:** 2026-05-18  
-**Scope:** plan only the **basic creation flow** for duplicatas aligned with the `DuplicataRegistry` contract, **without** expanding ramp/Etherfuse or full registry administration.  
-**Implementation:** see code under `packages/api/` — routes `POST /v1/duplicatas`, `POST /v1/duplicatas/:id/confirm`, `GET /v1/duplicatas/:id`, `GET /v1/duplicatas/on-chain/:chainId`, bindings in `packages/api/src/generated/duplicata-registry-contract.ts`.  
-**Contract reference:** `soroban/crates/duplicata-registry/src/` (`issue`, `IssuePayload`, `DuplicataIssued`, errors in `RegistryError`).  
+**Scope:** plan only the **basic creation flow** for trade bills aligned with the `TradeBillRegistry` contract, **without** expanding ramp/Etherfuse or full registry administration.  
+**Implementation:** see code under `src/` — routes `POST /v1/trade-bills`, `POST /v1/trade-bills/:id/confirm`, `GET /v1/trade-bills/:id`, `GET /v1/trade-bills/on-chain/:chainId`, bindings in `src/generated/trade-bill-registry-contract.ts`.  
+**Contract reference:** `soroban/crates/duplicata-registry/src/` (`issue`, `IssuePayload`, `TradeBillIssued`, errors in `RegistryError`).  
 **Official Stellar / Soroban docs:** [Smart contracts — docs](https://developers.stellar.org/docs/build/smart-contracts), [RPC methods](https://developers.stellar.org/docs/data/apis/rpc/api-reference/methods), [Assemble transaction (Horizon legacy patterns)](https://developers.stellar.org/docs/build/guides/transactions) — for Soroban invocations use **Soroban RPC** (`simulateTransaction`, `sendTransaction`).
 
 ---
 
 ## 1. Product goal (v1 “minimum viable”)
 
-Allow an **authorized issuer** (classic Stellar account `G...` mapped to Soroban `Address`) to **register a duplicata** on the deployed registry, with:
+Allow an **authorized issuer** (classic Stellar account `G...` mapped to Soroban `Address`) to **register a trade bill** on the deployed registry, with:
 
 1. **Off-chain validation** mirroring contract invariants (avoid useless XDR and failed fees).  
 2. **Assembly** of the `issue(issuer, payload)` invocation with `IssuePayload` consistent with `types.rs`.  
 3. **Signing** with the issuer key (the contract requires `issuer.require_auth()` in `issue` — see `lib.rs`).  
 4. **Network submission** and **DB persistence** of state for app queries.  
-5. **Optional correlation** with the existing indexer (`DuplicataIssued`) for audit.
+5. **Optional correlation** with the existing indexer (`TradeBillIssued`) for audit.
 
-**Explicitly out of scope v1:** `initialize` / `set_admin` / `set_issuer_allowed` via public API (admin remains CLI or a tightly restricted internal route); **file** storage (invoice PDFs); drawee off-chain management beyond `sacado_commitment`; custodial signing on the server.
+**Explicitly out of scope v1:** `initialize` / `set_admin` / `set_issuer_allowed` via public API (admin remains CLI or a tightly restricted internal route); **file** storage (invoice PDFs); drawee off-chain management beyond `drawee_commitment`; custodial signing on the server.
 
 ---
 
@@ -42,23 +42,23 @@ sequenceDiagram
   participant U as Issuer (wallet)
   participant API as Dupply API
   participant RPC as Soroban RPC
-  participant C as DuplicataRegistry
+  participant C as TradeBillRegistry
 
-  U->>API: POST /v1/duplicatas (data + issuer pubkey)
+  U->>API: POST /v1/trade-bills (data + issuer pubkey)
   API->>API: validate + hashes + allowlist (RPC read)
   API->>RPC: simulateTransaction (issue)
   RPC-->>API: footprint, auth entries, result
   API->>API: persist draft + simulation footprint
-  API-->>U: { duplicataDraftId, unsignedXdr, chainPreview }
+  API-->>U: { draftId, unsignedXdr, chainPreview }
 
   U->>U: sign XDR
   U->>RPC: sendTransaction (signed XDR)
   RPC-->>U: tx hash / status
 
-  U->>API: POST /v1/duplicatas/:id/confirm (txHash) optional
+  U->>API: POST /v1/trade-bills/:id/confirm (txHash) optional
   API->>RPC: getTransaction / poll
   API->>API: update state + chain id
-  API-->>U: { chainDuplicataId, ... }
+  API-->>U: { chainBillId, ... }
 
   Note over API,C: Alternative: confirmation only via indexer / internal webhook
 ```
@@ -69,23 +69,23 @@ sequenceDiagram
 
 ---
 
-## 4. Layers in the `packages/api` package
+## 4. Layers in the HTTP app (`src/`)
 
 | Module | Responsibility |
 |--------|----------------|
-| `domain/duplicata/` | Business validation, date normalization to unix, hash rules, DTO ↔ logical `IssuePayload` mapping. |
+| `domain/tradeBill/` | Business validation, date normalization to unix, hash rules, DTO ↔ logical `IssuePayload` mapping. |
 | `integrations/stellar/` | RPC client (`fetch` / `rpc.Server`), contract spec (WASM id / contract id), `simulateTransaction`, `Operation.invokeContract` prep, Soroban error decoding. |
 | `integrations/registry/` | High-level helpers: `assertIssuerAllowed`, `buildIssueTransaction`, `parseIssueResult`. |
-| `routes/v1/duplicatas.ts` | HTTP + Zod; **do not** expose secrets. |
-| `db/schema` (extension) | Tables `duplicata_drafts` / `duplicata_chain_records` (illustrative names). |
+| `routes/v1/trade-bills.ts` | HTTP + Zod; **do not** expose secrets. |
+| `db/schema` (extension) | Tables `trade_bill_drafts` / `trade_bill_chain_records` (illustrative names). |
 
-Keep **ramp** (`ramp_*`) isolated: a `duplicata_chain_record` may optionally reference `ramp_order_id` in a later phase (not mandatory in v1).
+Keep **ramp** (`ramp_*`) isolated: a `trade_bill_chain_record` may optionally reference `ramp_order_id` in a later phase (not mandatory in v1).
 
 ---
 
 ## 5. Data model (SQLite / Postgres — same Drizzle schema)
 
-### 5.1 `duplicata_drafts`
+### 5.1 `trade_bill_drafts`
 
 State before on-chain confirmation.
 
@@ -100,19 +100,19 @@ State before on-chain confirmation.
 | `last_error` | TEXT nullable | Friendly message + contract code if parseable. |
 | `created_at` / `updated_at` | TIMESTAMP | Audit. |
 
-### 5.2 `duplicata_chain_records` (or extra columns on draft after confirmation)
+### 5.2 `trade_bill_chain_records` (or extra columns on draft after confirmation)
 
 | Column | Type | Notes |
 |--------|------|--------|
 | `draft_id` | UUID FK | |
 | `network` | TEXT | `testnet` / `futurenet` / `mainnet`. |
 | `contract_id` | TEXT | Same concept as `DUPPLY_REGISTRY_CONTRACT_ID` in env. |
-| `chain_duplicata_id` | TEXT | `u64` serialized as string (avoid JS overflow). |
+| `chain_bill_id` | TEXT | `u64` serialized as string (avoid JS overflow). |
 | `tx_hash` | TEXT | |
 | `ledger` | INT nullable | |
 | `issued_at_ledger` | INT nullable | Ledger timestamp if available from event. |
 
-**Indexes:** `(tx_hash)`, unique composite `(chain_duplicata_id, contract_id, network)`.
+**Indexes:** `(tx_hash)`, unique composite `(chain_bill_id, contract_id, network)`.
 
 ---
 
@@ -120,44 +120,44 @@ State before on-chain confirmation.
 
 All routes below use the same **`X-Dupply-Api-Key`** as `/v1/ramp/*` (or JWT in v2 — outside v1).
 
-### 6.1 `POST /v1/duplicatas`
+### 6.1 `POST /v1/trade-bills`
 
-**Input (logical example — field names match `CreateDuplicataBody` / `IssuePayload`):**
+**Input (logical example — field names match `CreateTradeBillBody` / `IssuePayload`):**
 
 - `issuerPublicKey`: classic `G...`.  
-- `tipo`: `mercantil` \| `servico`.  
-- Hashes (64 hex chars = 32 bytes): `numeroDuplicataHash`, `numeroFaturaHash`, `docFiscalChaveHash`, `sacadoCommitment`.  
-- `docFiscalTipo`: `nfe` \| `nfce` \| `nfse` \| `outro`.  
-- `comprovanteTipo`: `entrega` \| `aceite` \| `prestacao_servico`.  
-- `statusAceiteSacado`: `aceito` \| `pendente` \| `recusado`.  
-- Amounts: `valorFaceCentavos`, `valorMaxAntecipacaoCentavos` (decimal strings, arbitrary precision).  
-- Dates: `dataEmissaoUnix`, `dataVencimentoUnix` (non-negative integers, unix seconds).  
-- Flags: `docFiscalAnexado`, `comprovanteAnexado`, `declaracoesAntifraudeAceitas`, `discountEligible`.
+- `billKind`: `commercial` \| `service`.  
+- Hashes (64 hex chars = 32 bytes): `draftNumberHash`, `invoiceNumberHash`, `fiscalDocKeyHash`, `draweeCommitment`.  
+- `fiscalDocKind`: `nfe` \| `nfce` \| `nfse` \| `other`.  
+- `evidenceKind`: `delivery` \| `acceptance` \| `service_performed`.  
+- `draweeAcceptance`: `accepted` \| `pending` \| `rejected`.  
+- Amounts: `faceValueCents`, `maxAdvanceValueCents` (decimal strings, arbitrary precision).  
+- Dates: `issueDateUnix`, `dueDateUnix` (non-negative integers, unix seconds).  
+- Flags: `fiscalDocAttached`, `evidenceAttached`, `fraudDeclarationsAccepted`, `discountEligible`.
 
 **Processing:**
 
 1. Validate body (Zod) + invariants mirroring `validate_payload`.  
 2. Resolve `contract_id` and RPC URL from env.  
-3. Optional: `is_issuer_allowed` via simulation or read — if the SDK only exposes `get_duplicata`, use read simulation or a method generated from spec.  
+3. Optional: `is_issuer_allowed` via simulation or read — if the SDK only exposes `get_trade_bill`, use read simulation or a method generated from spec.  
 4. Build `InvokeHostFunction` with Soroban args (`issue` + `issuer` + `payload`).  
 5. `simulateTransaction` — store footprint and unsigned XDR.  
 6. Response: `{ id, status: "simulated", unsignedTransactionXdr, warnings[] }`.
 
 **HTTP errors:** `400` validation; `403` not allowlisted (pre-check); `502` RPC; `503` missing config.
 
-### 6.2 `POST /v1/duplicatas/:id/signed` (optional in v1)
+### 6.2 `POST /v1/trade-bills/:id/signed` (optional in v1)
 
 If you want **backend submission** (server channel key / relayer for fees only, not issuer auth): it does **not** satisfy `issuer.require_auth()` — generally **not applicable**. Prefer **not** implementing in v1.
 
-### 6.3 `POST /v1/duplicatas/:id/confirm`
+### 6.3 `POST /v1/trade-bills/:id/confirm`
 
-Body: `{ txHash }`. Backend runs `getTransaction` / short polling, extracts `returnValue` ( `u64` id) or reads `DuplicataIssued`, updates `duplicata_chain_records`. Idempotent by `tx_hash`.
+Body: `{ txHash }`. Backend runs `getTransaction` / short polling, extracts `returnValue` ( `u64` id) or reads `TradeBillIssued`, updates `trade_bill_chain_records`. Idempotent by `tx_hash`.
 
-### 6.4 `GET /v1/duplicatas/:id`
+### 6.4 `GET /v1/trade-bills/:id`
 
-Joins draft + on-chain record (if any). Optionally enriches with live `get_duplicata`.
+Joins draft + on-chain record (if any). Optionally enriches with live `get_trade_bill`.
 
-### 6.5 `GET /v1/duplicatas/on-chain/:chainId`
+### 6.5 `GET /v1/trade-bills/on-chain/:chainId`
 
 Read proxy (RPC) for debugging; may be `GET` with `contract_id` query if needed.
 
@@ -167,14 +167,14 @@ Read proxy (RPC) for debugging; may be `GET` with `contract_id` query if needed.
 
 The contract stores only commitments. The Dupply plan should **document in one place** (e.g. a section here or under `docs/research/`) **canonicalization** of strings before SHA-256, for example:
 
-- `numero_duplicata`: normalize (trim, NFC), version prefix `dupply:v1:duplicata_number:` + value.  
+- `draft_number`: normalize (trim, NFC), version prefix `dupply:v1:draft_number:` + value.  
 - Same pattern for invoice number, fiscal doc key, drawee (or internal id).
 
 **Backend v1:** accept **64-character hex** (or `0x` prefix) to simplify and avoid client/server divergence; optional `hashVersion` field for evolution.
 
 ---
 
-## 8. Suggested technical stack (Node, aligned with current `packages/api`)
+## 8. Suggested technical stack (Node, aligned with current `src/`)
 
 | Piece | Choice | Notes |
 |-------|--------|--------|
@@ -196,10 +196,10 @@ STELLAR_HORIZON_URL=https://horizon-testnet.stellar.org
 
 ## 9. Indexer
 
-Current `packages/indexer/` may, in a sub-phase:
+A future indexer worker (see `indexer/README.md`) may, in a sub-phase:
 
-- consume `DuplicataIssued` events;  
-- write `chain_duplicata_id` + `tx_hash` (if DB is shared or via internal queue).
+- consume `TradeBillIssued` events;  
+- write `chain_bill_id` + `tx_hash` (if DB is shared or via internal queue).
 
 **Minimal v1:** confirm only via `POST .../confirm` without changing the indexer reduces scope.
 
@@ -214,12 +214,12 @@ Current `packages/indexer/` may, in a sub-phase:
 
 ---
 
-## 11. Acceptance criteria (v1 duplicata)
+## 11. Acceptance criteria (v1 trade bill)
 
 1. Allowlisted issuer obtains valid `unsignedTransactionXdr` and submits on testnet, yielding on-chain `id`.  
 2. Non-allowlisted issuer gets a clear error **before** or in simulation with `IssuerNotAllowed` mapping.  
 3. Invalid payload (e.g. `declaracoesAntifraudeAceitas: false`) → `400` with code aligned to `RegistryError`.  
-4. `POST /confirm` is idempotent and stores `tx_hash` + `chain_duplicata_id`.  
+4. `POST /confirm` is idempotent and stores `tx_hash` + `chain_bill_id`.  
 5. Automated tests: unit validation + integration with mocked RPC (no real keys in CI).
 
 ---
@@ -229,9 +229,9 @@ Current `packages/indexer/` may, in a sub-phase:
 | Phase | Deliverable |
 |-------|-------------|
 | D1 | Drizzle schema + stub routes + Zod DTOs mirroring `IssuePayload`. |
-| D2 | RPC client + `issue` simulation + `duplicata_drafts` persistence. |
+| D2 | RPC client + `issue` simulation + `trade_bill_drafts` persistence. |
 | D3 | `POST /confirm` + result / event parsing. |
-| D4 | Tests + error hardening + `packages/api/README.md` documentation. |
+| D4 | Tests + error hardening + `API.md` documentation. |
 | D5 (optional) | Indexer writes to same DB or internal topic. |
 
 ---

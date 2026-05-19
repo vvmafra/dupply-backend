@@ -2,8 +2,8 @@ import { AssembledTransaction } from "@stellar/stellar-sdk/contract";
 import { Keypair } from "@stellar/stellar-sdk";
 
 import type { AppConfig } from "../../config.js";
-import { Client as RegistryContractClient } from "../../generated/duplicata-registry-contract.js";
-import type { IssuePayload } from "../../generated/duplicata-registry-contract.js";
+import { Client as RegistryContractClient } from "../../generated/trade-bill-registry-contract.js";
+import type { IssuePayload } from "../../generated/trade-bill-registry-contract.js";
 import { stellarNetworkPassphrase } from "../stellar/network.js";
 
 export class IssuerNotAllowedError extends Error {

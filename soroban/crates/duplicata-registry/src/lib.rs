@@ -6,7 +6,7 @@ use error::RegistryError;
 use soroban_sdk::{
     contract, contractevent, contractimpl, panic_with_error, Address, Env, Symbol, symbol_short,
 };
-use types::{DataKey, Duplicata, IssuePayload};
+use types::{DataKey, IssuePayload, TradeBill};
 
 const KEY_ADMIN: Symbol = symbol_short!("ADMIN");
 const KEY_NEXT: Symbol = symbol_short!("NEXT_ID");
@@ -37,41 +37,41 @@ fn require_initialized(env: &Env) -> Address {
 }
 
 #[contractevent]
-pub struct DuplicataIssued {
+pub struct TradeBillIssued {
     #[topic]
     pub id: u64,
     #[topic]
     pub issuer: Address,
-    pub valor_face_centavos: i128,
-    pub valor_max_antecipacao_centavos: i128,
-    pub data_vencimento_unix: u64,
+    pub face_value_cents: i128,
+    pub max_advance_value_cents: i128,
+    pub due_date_unix: u64,
     pub discount_eligible: bool,
     pub issued_at: u64,
 }
 
 fn validate_payload(env: &Env, p: &IssuePayload) {
-    if !p.declaracoes_antifraude_aceitas {
+    if !p.fraud_declarations_accepted {
         panic_with_error!(env, RegistryError::FraudDeclarationsRequired);
     }
-    if p.valor_face_centavos <= 0 {
+    if p.face_value_cents <= 0 {
         panic_with_error!(env, RegistryError::InvalidAmounts);
     }
-    if p.valor_max_antecipacao_centavos < 0 || p.valor_max_antecipacao_centavos > p.valor_face_centavos {
+    if p.max_advance_value_cents < 0 || p.max_advance_value_cents > p.face_value_cents {
         panic_with_error!(env, RegistryError::InvalidAmounts);
     }
-    if p.data_vencimento_unix <= p.data_emissao_unix {
+    if p.due_date_unix <= p.issue_date_unix {
         panic_with_error!(env, RegistryError::InvalidDates);
     }
-    if p.discount_eligible && (!p.doc_fiscal_anexado || !p.comprovante_anexado) {
+    if p.discount_eligible && (!p.fiscal_doc_attached || !p.evidence_attached) {
         panic_with_error!(env, RegistryError::InvalidDiscountFlags);
     }
 }
 
 #[contract]
-pub struct DuplicataRegistry;
+pub struct TradeBillRegistry;
 
 #[contractimpl]
-impl DuplicataRegistry {
+impl TradeBillRegistry {
     pub fn initialize(env: Env, admin: Address) {
         if env.storage().instance().has(&KEY_ADMIN) {
             panic_with_error!(&env, RegistryError::AlreadyInitialized);
@@ -118,8 +118,8 @@ impl DuplicataRegistry {
             .unwrap_or(false)
     }
 
-    pub fn get_duplicata(env: Env, id: u64) -> Option<Duplicata> {
-        let key = DataKey::Dup(id);
+    pub fn get_trade_bill(env: Env, id: u64) -> Option<TradeBill> {
+        let key = DataKey::Rec(id);
         env.storage().persistent().get(&key)
     }
 
@@ -138,44 +138,44 @@ impl DuplicataRegistry {
             .expect("next id");
         let issued_at = env.ledger().timestamp();
 
-        let dup = Duplicata {
+        let bill = TradeBill {
             id,
             issuer: issuer.clone(),
             issued_at,
-            tipo: payload.tipo.clone(),
-            numero_duplicata_hash: payload.numero_duplicata_hash.clone(),
-            numero_fatura_hash: payload.numero_fatura_hash.clone(),
-            doc_fiscal_chave_hash: payload.doc_fiscal_chave_hash.clone(),
-            sacado_commitment: payload.sacado_commitment.clone(),
-            doc_fiscal_tipo: payload.doc_fiscal_tipo.clone(),
-            comprovante_tipo: payload.comprovante_tipo.clone(),
-            status_aceite_sacado: payload.status_aceite_sacado.clone(),
-            valor_face_centavos: payload.valor_face_centavos,
-            valor_max_antecipacao_centavos: payload.valor_max_antecipacao_centavos,
-            data_emissao_unix: payload.data_emissao_unix,
-            data_vencimento_unix: payload.data_vencimento_unix,
-            doc_fiscal_anexado: payload.doc_fiscal_anexado,
-            comprovante_anexado: payload.comprovante_anexado,
-            declaracoes_antifraude_aceitas: payload.declaracoes_antifraude_aceitas,
+            kind: payload.kind.clone(),
+            draft_number_hash: payload.draft_number_hash.clone(),
+            invoice_number_hash: payload.invoice_number_hash.clone(),
+            fiscal_doc_key_hash: payload.fiscal_doc_key_hash.clone(),
+            drawee_commitment: payload.drawee_commitment.clone(),
+            fiscal_doc_kind: payload.fiscal_doc_kind.clone(),
+            evidence_kind: payload.evidence_kind.clone(),
+            drawee_acceptance: payload.drawee_acceptance.clone(),
+            face_value_cents: payload.face_value_cents,
+            max_advance_value_cents: payload.max_advance_value_cents,
+            issue_date_unix: payload.issue_date_unix,
+            due_date_unix: payload.due_date_unix,
+            fiscal_doc_attached: payload.fiscal_doc_attached,
+            evidence_attached: payload.evidence_attached,
+            fraud_declarations_accepted: payload.fraud_declarations_accepted,
             discount_eligible: payload.discount_eligible,
         };
 
-        let dup_key = DataKey::Dup(id);
-        env.storage().persistent().set(&dup_key, &dup);
-        bump_persistent(&env, &dup_key);
+        let bill_key = DataKey::Rec(id);
+        env.storage().persistent().set(&bill_key, &bill);
+        bump_persistent(&env, &bill_key);
 
         let next = id.checked_add(1).expect("overflow");
         env.storage().instance().set(&KEY_NEXT, &next);
         bump_instance(&env);
 
-        DuplicataIssued {
+        TradeBillIssued {
             id,
             issuer: issuer.clone(),
-            valor_face_centavos: dup.valor_face_centavos,
-            valor_max_antecipacao_centavos: dup.valor_max_antecipacao_centavos,
-            data_vencimento_unix: dup.data_vencimento_unix,
-            discount_eligible: dup.discount_eligible,
-            issued_at: dup.issued_at,
+            face_value_cents: bill.face_value_cents,
+            max_advance_value_cents: bill.max_advance_value_cents,
+            due_date_unix: bill.due_date_unix,
+            discount_eligible: bill.discount_eligible,
+            issued_at: bill.issued_at,
         }
         .publish(&env);
 

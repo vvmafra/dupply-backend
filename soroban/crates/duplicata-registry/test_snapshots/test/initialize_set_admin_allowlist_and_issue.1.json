@@ -66,46 +66,6 @@
                   "map": [
                     {
                       "key": {
-                        "symbol": "comprovante_anexado"
-                      },
-                      "val": {
-                        "bool": true
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "comprovante_tipo"
-                      },
-                      "val": {
-                        "u32": 0
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "data_emissao_unix"
-                      },
-                      "val": {
-                        "u64": "1700000000"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "data_vencimento_unix"
-                      },
-                      "val": {
-                        "u64": "1800000000"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "declaracoes_antifraude_aceitas"
-                      },
-                      "val": {
-                        "bool": true
-                      }
-                    },
-                    {
-                      "key": {
                         "symbol": "discount_eligible"
                       },
                       "val": {
@@ -114,15 +74,7 @@
                     },
                     {
                       "key": {
-                        "symbol": "doc_fiscal_anexado"
-                      },
-                      "val": {
-                        "bool": true
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "doc_fiscal_chave_hash"
+                        "symbol": "draft_number_hash"
                       },
                       "val": {
                         "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
@@ -130,39 +82,7 @@
                     },
                     {
                       "key": {
-                        "symbol": "doc_fiscal_tipo"
-                      },
-                      "val": {
-                        "u32": 0
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "numero_duplicata_hash"
-                      },
-                      "val": {
-                        "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "numero_fatura_hash"
-                      },
-                      "val": {
-                        "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "sacado_commitment"
-                      },
-                      "val": {
-                        "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
-                      }
-                    },
-                    {
-                      "key": {
-                        "symbol": "status_aceite_sacado"
+                        "symbol": "drawee_acceptance"
                       },
                       "val": {
                         "u32": 1
@@ -170,7 +90,31 @@
                     },
                     {
                       "key": {
-                        "symbol": "tipo"
+                        "symbol": "drawee_commitment"
+                      },
+                      "val": {
+                        "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "due_date_unix"
+                      },
+                      "val": {
+                        "u64": "1800000000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "evidence_attached"
+                      },
+                      "val": {
+                        "bool": true
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "evidence_kind"
                       },
                       "val": {
                         "u32": 0
@@ -178,7 +122,7 @@
                     },
                     {
                       "key": {
-                        "symbol": "valor_face_centavos"
+                        "symbol": "face_value_cents"
                       },
                       "val": {
                         "i128": "1000000"
@@ -186,7 +130,63 @@
                     },
                     {
                       "key": {
-                        "symbol": "valor_max_antecipacao_centavos"
+                        "symbol": "fiscal_doc_attached"
+                      },
+                      "val": {
+                        "bool": true
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "fiscal_doc_key_hash"
+                      },
+                      "val": {
+                        "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "fiscal_doc_kind"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "fraud_declarations_accepted"
+                      },
+                      "val": {
+                        "bool": true
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "invoice_number_hash"
+                      },
+                      "val": {
+                        "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "issue_date_unix"
+                      },
+                      "val": {
+                        "u64": "1700000000"
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "kind"
+                      },
+                      "val": {
+                        "u32": 0
+                      }
+                    },
+                    {
+                      "key": {
+                        "symbol": "max_advance_value_cents"
                       },
                       "val": {
                         "i128": "500000"
@@ -224,7 +224,34 @@
               "key": {
                 "vec": [
                   {
-                    "symbol": "Dup"
+                    "symbol": "Iss"
+                  },
+                  {
+                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
+                  }
+                ]
+              },
+              "durability": "persistent",
+              "val": {
+                "bool": true
+              }
+            }
+          },
+          "ext": "v0"
+        },
+        "live_until": 4095
+      },
+      {
+        "entry": {
+          "last_modified_ledger_seq": 0,
+          "data": {
+            "contract_data": {
+              "ext": "v0",
+              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
+              "key": {
+                "vec": [
+                  {
+                    "symbol": "Rec"
                   },
                   {
                     "u64": "1"
@@ -236,46 +263,6 @@
                 "map": [
                   {
                     "key": {
-                      "symbol": "comprovante_anexado"
-                    },
-                    "val": {
-                      "bool": true
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "comprovante_tipo"
-                    },
-                    "val": {
-                      "u32": 0
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "data_emissao_unix"
-                    },
-                    "val": {
-                      "u64": "1700000000"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "data_vencimento_unix"
-                    },
-                    "val": {
-                      "u64": "1800000000"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "declaracoes_antifraude_aceitas"
-                    },
-                    "val": {
-                      "bool": true
-                    }
-                  },
-                  {
-                    "key": {
                       "symbol": "discount_eligible"
                     },
                     "val": {
@@ -284,15 +271,7 @@
                   },
                   {
                     "key": {
-                      "symbol": "doc_fiscal_anexado"
-                    },
-                    "val": {
-                      "bool": true
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "doc_fiscal_chave_hash"
+                      "symbol": "draft_number_hash"
                     },
                     "val": {
                       "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
@@ -300,10 +279,82 @@
                   },
                   {
                     "key": {
-                      "symbol": "doc_fiscal_tipo"
+                      "symbol": "drawee_acceptance"
+                    },
+                    "val": {
+                      "u32": 1
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "drawee_commitment"
+                    },
+                    "val": {
+                      "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "due_date_unix"
+                    },
+                    "val": {
+                      "u64": "1800000000"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "evidence_attached"
+                    },
+                    "val": {
+                      "bool": true
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "evidence_kind"
                     },
                     "val": {
                       "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "face_value_cents"
+                    },
+                    "val": {
+                      "i128": "1000000"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "fiscal_doc_attached"
+                    },
+                    "val": {
+                      "bool": true
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "fiscal_doc_key_hash"
+                    },
+                    "val": {
+                      "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "fiscal_doc_kind"
+                    },
+                    "val": {
+                      "u32": 0
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "fraud_declarations_accepted"
+                    },
+                    "val": {
+                      "bool": true
                     }
                   },
                   {
@@ -312,6 +363,22 @@
                     },
                     "val": {
                       "u64": "1"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "invoice_number_hash"
+                    },
+                    "val": {
+                      "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
+                    }
+                  },
+                  {
+                    "key": {
+                      "symbol": "issue_date_unix"
+                    },
+                    "val": {
+                      "u64": "1700000000"
                     }
                   },
                   {
@@ -332,39 +399,7 @@
                   },
                   {
                     "key": {
-                      "symbol": "numero_duplicata_hash"
-                    },
-                    "val": {
-                      "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "numero_fatura_hash"
-                    },
-                    "val": {
-                      "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "sacado_commitment"
-                    },
-                    "val": {
-                      "bytes": "0000000000000000000000000000000000000000000000000000000000000000"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "status_aceite_sacado"
-                    },
-                    "val": {
-                      "u32": 1
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "tipo"
+                      "symbol": "kind"
                     },
                     "val": {
                       "u32": 0
@@ -372,48 +407,13 @@
                   },
                   {
                     "key": {
-                      "symbol": "valor_face_centavos"
-                    },
-                    "val": {
-                      "i128": "1000000"
-                    }
-                  },
-                  {
-                    "key": {
-                      "symbol": "valor_max_antecipacao_centavos"
+                      "symbol": "max_advance_value_cents"
                     },
                     "val": {
                       "i128": "500000"
                     }
                   }
                 ]
-              }
-            }
-          },
-          "ext": "v0"
-        },
-        "live_until": 4095
-      },
-      {
-        "entry": {
-          "last_modified_ledger_seq": 0,
-          "data": {
-            "contract_data": {
-              "ext": "v0",
-              "contract": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "key": {
-                "vec": [
-                  {
-                    "symbol": "Iss"
-                  },
-                  {
-                    "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAHK3M"
-                  }
-                ]
-              },
-              "durability": "persistent",
-              "val": {
-                "bool": true
               }
             }
           },

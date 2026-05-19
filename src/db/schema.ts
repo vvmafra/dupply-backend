@@ -37,7 +37,7 @@ export const rampOrders = sqliteTable(
   ],
 );
 
-export const duplicataDrafts = sqliteTable("duplicata_drafts", {
+export const tradeBillDrafts = sqliteTable("trade_bill_drafts", {
   id: text("id").primaryKey(),
   issuerPublicKey: text("issuer_public_key").notNull(),
   status: text("status").notNull().default("draft"),
@@ -51,28 +51,28 @@ export const duplicataDrafts = sqliteTable("duplicata_drafts", {
   updatedAtMs: text("updated_at_ms").notNull(),
 });
 
-export const duplicataChainRecords = sqliteTable(
-  "duplicata_chain_records",
+export const tradeBillChainRecords = sqliteTable(
+  "trade_bill_chain_records",
   {
     id: text("id").primaryKey(),
     draftId: text("draft_id")
       .notNull()
-      .references(() => duplicataDrafts.id),
+      .references(() => tradeBillDrafts.id),
     network: text("network").notNull(),
     contractId: text("contract_id").notNull(),
-    chainDuplicataId: text("chain_duplicata_id").notNull(),
+    chainBillId: text("chain_bill_id").notNull(),
     txHash: text("tx_hash").notNull(),
     ledger: text("ledger"),
     issuedAtLedger: text("issued_at_ledger"),
     createdAtMs: text("created_at_ms").notNull(),
   },
   (t) => [
-    uniqueIndex("duplicata_chain_unique_on_chain_id").on(
-      t.chainDuplicataId,
+    uniqueIndex("trade_bill_chain_unique_on_chain_id").on(
+      t.chainBillId,
       t.contractId,
       t.network,
     ),
-    index("duplicata_chain_tx_hash_idx").on(t.txHash),
-    index("duplicata_chain_draft_id_idx").on(t.draftId),
+    index("trade_bill_chain_tx_hash_idx").on(t.txHash),
+    index("trade_bill_chain_draft_id_idx").on(t.draftId),
   ],
 );

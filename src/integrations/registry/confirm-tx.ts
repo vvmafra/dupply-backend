@@ -18,7 +18,7 @@ export class TxFailedError extends Error {
 export async function parseSuccessfulIssueTx(
   rpcUrl: string,
   txHash: string,
-): Promise<{ chainDuplicataId: string; ledger: string; issuedAtUnix: string }> {
+): Promise<{ chainBillId: string; ledger: string; issuedAtUnix: string }> {
   const server = new SorobanServer(rpcUrl);
   const res = await server.getTransaction(txHash);
   if (res.status === Api.GetTransactionStatus.SUCCESS) {
@@ -26,14 +26,14 @@ export async function parseSuccessfulIssueTx(
       throw new Error("successful transaction has no Soroban return value");
     }
     const native = scValToNative(res.returnValue);
-    const chainDuplicataId =
+    const chainBillId =
       typeof native === "bigint"
         ? native.toString()
         : typeof native === "number"
           ? String(native)
           : String(native);
     return {
-      chainDuplicataId,
+      chainBillId,
       ledger: String(res.ledger),
       issuedAtUnix: String(res.createdAt),
     };

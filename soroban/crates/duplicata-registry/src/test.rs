@@ -1,10 +1,9 @@
 #![cfg(test)]
 
 use crate::types::{
-    DuplicataAceiteSacado, DuplicataComprovanteTipo, DuplicataFiscalTipo, DuplicataTipo,
-    IssuePayload,
+    BillKind, DraweeAcceptance, EvidenceKind, FiscalDocKind, IssuePayload,
 };
-use crate::{DuplicataRegistry, DuplicataRegistryClient};
+use crate::{TradeBillRegistry, TradeBillRegistryClient};
 use soroban_sdk::testutils::Address as _;
 use soroban_sdk::{Address, BytesN, Env};
 
@@ -14,21 +13,21 @@ fn zero_hash(env: &Env) -> BytesN<32> {
 
 fn sample_payload(env: &Env) -> IssuePayload {
     IssuePayload {
-        tipo: DuplicataTipo::Mercantil,
-        numero_duplicata_hash: zero_hash(env),
-        numero_fatura_hash: zero_hash(env),
-        doc_fiscal_chave_hash: zero_hash(env),
-        sacado_commitment: zero_hash(env),
-        doc_fiscal_tipo: DuplicataFiscalTipo::Nfe,
-        comprovante_tipo: DuplicataComprovanteTipo::Entrega,
-        status_aceite_sacado: DuplicataAceiteSacado::Pendente,
-        valor_face_centavos: 1_000_000,
-        valor_max_antecipacao_centavos: 500_000,
-        data_emissao_unix: 1_700_000_000,
-        data_vencimento_unix: 1_800_000_000,
-        doc_fiscal_anexado: true,
-        comprovante_anexado: true,
-        declaracoes_antifraude_aceitas: true,
+        kind: BillKind::Commercial,
+        draft_number_hash: zero_hash(env),
+        invoice_number_hash: zero_hash(env),
+        fiscal_doc_key_hash: zero_hash(env),
+        drawee_commitment: zero_hash(env),
+        fiscal_doc_kind: FiscalDocKind::Nfe,
+        evidence_kind: EvidenceKind::Delivery,
+        drawee_acceptance: DraweeAcceptance::Pending,
+        face_value_cents: 1_000_000,
+        max_advance_value_cents: 500_000,
+        issue_date_unix: 1_700_000_000,
+        due_date_unix: 1_800_000_000,
+        fiscal_doc_attached: true,
+        evidence_attached: true,
+        fraud_declarations_accepted: true,
         discount_eligible: true,
     }
 }
@@ -38,8 +37,8 @@ fn initialize_set_admin_allowlist_and_issue() {
     let env = Env::default();
     env.mock_all_auths();
 
-    let contract_id = env.register(DuplicataRegistry, ());
-    let client = DuplicataRegistryClient::new(&env, &contract_id);
+    let contract_id = env.register(TradeBillRegistry, ());
+    let client = TradeBillRegistryClient::new(&env, &contract_id);
 
     let admin = Address::generate(&env);
     let issuer = Address::generate(&env);
@@ -55,10 +54,10 @@ fn initialize_set_admin_allowlist_and_issue() {
     assert_eq!(id, 1);
     assert_eq!(client.next_id(), 2);
 
-    let dup = client.get_duplicata(&1).expect("duplicata");
-    assert_eq!(dup.id, 1);
-    assert_eq!(dup.issuer, issuer);
-    assert_eq!(dup.valor_face_centavos, 1_000_000);
+    let bill = client.get_trade_bill(&1).expect("trade bill");
+    assert_eq!(bill.id, 1);
+    assert_eq!(bill.issuer, issuer);
+    assert_eq!(bill.face_value_cents, 1_000_000);
 }
 
 #[test]
@@ -66,8 +65,8 @@ fn initialize_set_admin_allowlist_and_issue() {
 fn issue_fails_if_not_allowlisted() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register(DuplicataRegistry, ());
-    let client = DuplicataRegistryClient::new(&env, &contract_id);
+    let contract_id = env.register(TradeBillRegistry, ());
+    let client = TradeBillRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     let issuer = Address::generate(&env);
     client.initialize(&admin);
@@ -79,14 +78,14 @@ fn issue_fails_if_not_allowlisted() {
 fn issue_fails_without_fraud_declaration() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register(DuplicataRegistry, ());
-    let client = DuplicataRegistryClient::new(&env, &contract_id);
+    let contract_id = env.register(TradeBillRegistry, ());
+    let client = TradeBillRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     let issuer = Address::generate(&env);
     client.initialize(&admin);
     client.set_issuer_allowed(&issuer, &true);
     let mut p = sample_payload(&env);
-    p.declaracoes_antifraude_aceitas = false;
+    p.fraud_declarations_accepted = false;
     let _ = client.issue(&issuer, &p);
 }
 
@@ -95,14 +94,14 @@ fn issue_fails_without_fraud_declaration() {
 fn discount_eligible_requires_attachments() {
     let env = Env::default();
     env.mock_all_auths();
-    let contract_id = env.register(DuplicataRegistry, ());
-    let client = DuplicataRegistryClient::new(&env, &contract_id);
+    let contract_id = env.register(TradeBillRegistry, ());
+    let client = TradeBillRegistryClient::new(&env, &contract_id);
     let admin = Address::generate(&env);
     let issuer = Address::generate(&env);
     client.initialize(&admin);
     client.set_issuer_allowed(&issuer, &true);
     let mut p = sample_payload(&env);
     p.discount_eligible = true;
-    p.doc_fiscal_anexado = false;
+    p.fiscal_doc_attached = false;
     let _ = client.issue(&issuer, &p);
 }

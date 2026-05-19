@@ -1,65 +1,65 @@
 # Dupply — `duplicata-registry` (Soroban)
 
-Registry on-chain de duplicatas descontáveis: **allowlist de issuers**, **`issue`** com commitments (`BytesN<32>`), valores em **centavos (`i128`)**, evento **`DuplicataIssued`** ([`contractevent`](https://developers.stellar.org/docs/build/smart-contracts/getting-started/events)).
+On-chain **trade bill** registry: **issuer allowlist**, **`issue`** with `BytesN<32>` commitments, amounts in **cents (`i128`)**, and **`TradeBillIssued`** event ([`contractevent`](https://developers.stellar.org/docs/build/smart-contracts/getting-started/events)).
 
-O código em `crates/duplicata-registry/src/` não usa documentação `///` inline; a API e o domínio descrevem-se neste README e em [DEPLOYMENT-testnet.md](./DEPLOYMENT-testnet.md).
+Rust sources in `crates/duplicata-registry/src/` use minimal inline `///` docs; the API and domain are described here and in [DEPLOYMENT-testnet.md](./DEPLOYMENT-testnet.md).
 
 ## Toolchain
 
-- **Rust:** `1.92.0` (pin em [rust-toolchain.toml](rust-toolchain.toml)). O `stellar contract build` **rejeita** 1.91.0; ver mensagem da CLI se mudar versão.
-- **Alvo:** `wasm32v1-none`
-- **soroban-sdk:** workspace `25` (ver [Cargo.toml](Cargo.toml))
+- **Rust:** `1.92.0` (pinned in [rust-toolchain.toml](rust-toolchain.toml)). `stellar contract build` **rejects** 1.91.0; see CLI output if you change the version.
+- **Target:** `wasm32v1-none`
+- **soroban-sdk:** workspace `25` (see [Cargo.toml](Cargo.toml))
 
-## Comandos
+## Commands
 
-Na raiz deste workspace Soroban (`dupply-backend/soroban`):
+From this Soroban workspace root (`dupply-backend/soroban`):
 
 ```bash
 cargo test -p duplicata-registry
 stellar contract build
 ```
 
-Wasm release: `target/wasm32v1-none/release/duplicata_registry.wasm`
+Release Wasm: `target/wasm32v1-none/release/duplicata_registry.wasm`
 
-## Contrato (API)
+## Contract API
 
-| Função | Descrição |
-|--------|-----------|
-| `initialize(admin)` | Uma vez; `admin` assina. |
-| `set_admin(new_admin)` | Só `admin` atual. |
-| `set_issuer_allowed(issuer, allowed)` | Só `admin`. |
-| `issue(issuer, payload)` | Issuer assinado + allowlist + invariantes. Retorna `id` (`u64`). |
-| `get_duplicata(id)` | Leitura. |
-| `is_issuer_allowed(issuer)` | Leitura. |
-| `admin()` / `next_id()` | Leitura. |
+| Function | Description |
+| -------- | ----------- |
+| `initialize(admin)` | Once; `admin` signs. |
+| `set_admin(new_admin)` | Current `admin` only. |
+| `set_issuer_allowed(issuer, allowed)` | `admin` only. |
+| `issue(issuer, payload)` | Signed issuer + allowlist + invariants. Returns `id` (`u64`). |
+| `get_trade_bill(id)` | Read. |
+| `is_issuer_allowed(issuer)` | Read. |
+| `admin()` / `next_id()` | Read. |
 
-### Erros (`RegistryError`)
+### Errors (`RegistryError`)
 
 `AlreadyInitialized`, `NotInitialized`, `Unauthorized` (via auth), `IssuerNotAllowed`, `InvalidAmounts`, `InvalidDates`, `FraudDeclarationsRequired`, `NotFound`, `InvalidDiscountFlags`.
 
-### Invariantes em `issue`
+### `issue` invariants
 
-- `declaracoes_antifraude_aceitas == true`
-- `valor_face_centavos > 0`
-- `0 <= valor_max_antecipacao_centavos <= valor_face_centavos`
-- `data_vencimento_unix > data_emissao_unix`
-- Se `discount_eligible`: `doc_fiscal_anexado && comprovante_anexado`
+- `fraud_declarations_accepted == true`
+- `face_value_cents > 0`
+- `0 <= max_advance_value_cents <= face_value_cents`
+- `due_date_unix > issue_date_unix`
+- If `discount_eligible`: `fiscal_doc_attached && evidence_attached`
 
 ## Deploy (testnet)
 
-Não commitar chaves. Exemplo (ajustar identidade / rede conforme [Stellar docs](https://developers.stellar.org/docs/build/smart-contracts/getting-started/deploy-to-testnet)):
+Do not commit keys. Example (adjust identity / network per [Stellar docs](https://developers.stellar.org/docs/build/smart-contracts/getting-started/deploy-to-testnet)):
 
 ```bash
 stellar contract deploy   --wasm target/wasm32v1-none/release/duplicata_registry.wasm   --source SAUA...   --network testnet
 ```
 
-Script opcional: [scripts/deploy-testnet.sh](scripts/deploy-testnet.sh)
+Optional script: [scripts/deploy-testnet.sh](scripts/deploy-testnet.sh)
 
-## Referência de domínio (front)
+## Frontend types
 
-Tipos alinhados a `dupply-frontend` (só documentação; o front **não** é alterado por este crate): `src/domain/duplicata/duplicata.types.ts`.
+Align HTTP/JSON with the Dupply frontend where applicable (`duplicata.types.ts` or successor); contract + generated TS bindings are the on-chain source of truth until a shared package exists.
 
-## Estrutura
+## Layout
 
 ```text
 soroban/
@@ -69,7 +69,7 @@ soroban/
     Cargo.toml
     Makefile
     src/
-      lib.rs
+      lib.rs                     # TradeBillRegistry
       types.rs
       error.rs
       test.rs

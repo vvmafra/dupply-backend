@@ -1,88 +1,88 @@
-# Backend Dupply: avaliação para DDD + CQRS
+# Dupply backend: DDD + CQRS assessment
 
-**Data:** 2026-05-18  
-**Objetivo:** mapear a arquitetura **atual** do pacote `packages/api/`, contrastar com **DDD** (Domain-Driven Design) e **CQRS** (Command Query Responsibility Segregation), e listar o que **manter**, **refatorar** ou **introduzir** — sem comprometer ainda com datas ou “big bang”.  
-**Leituras oficiais / canónicas (prioridade):** [Martin Fowler — CQRS](https://martinfowler.com/bliki/CQRS.html), [Azure Architecture Center — CQRS pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs), [DDD Reference (Eric Evans / Domain Language)](https://www.domainlanguage.com/ddd/reference/).
-
----
-
-## 1. O que queremos dizer com DDD + CQRS (neste repo)
-
-| Conceito | Significado prático aqui |
-|----------|---------------------------|
-| **DDD** | Fronteiras de **domínio** claras (Duplicata no registry Soroban vs Rampa Etherfuse), linguagem ubíqua alinhada ao contrato/API, regras de negócio **fora** dos handlers HTTP, modelos ricos ou serviços de domínio onde fizer sentido, **anti-corruption layer** entre “nosso domínio” e SDKs (Stellar, Etherfuse). |
-| **CQRS** | Separar **comandos** (alteram estado: criar quote, criar ordem, simular `issue`, confirmar `txHash`, aplicar webhook) de **consultas** (só leem: `GET` ramp order, `GET` duplicata, assets, `get_duplicata` on-chain). Pode ser só **separação em módulos** no início; **modelos de leitura** separados (projeções) só quando houver ganho mensurável. |
-
-**Não é obrigatório** na primeira iteração: Event Sourcing, message bus distribuído, ou read models em BD separado — CQRS é um **espectro** ([Fowler](https://martinfowler.com/bliki/CQRS.html)).
+**Date:** 2026-05-18  
+**Goal:** map the **current** Node app in `src/`, compare with **DDD** (Domain-Driven Design) and **CQRS** (Command Query Responsibility Segregation), and list what to **keep**, **refactor**, or **introduce** — without committing to dates or a “big bang”.  
+**Canonical reads:** [Martin Fowler — CQRS](https://martinfowler.com/bliki/CQRS.html), [Azure Architecture Center — CQRS pattern](https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs), [DDD Reference (Eric Evans / Domain Language)](https://www.domainlanguage.com/ddd/reference/).
 
 ---
 
-## 2. Mapa do que existe hoje (`packages/api/`)
+## 1. What we mean by DDD + CQRS (in this repo)
+
+| Concept | Practical meaning here |
+|--------|-------------------------|
+| **DDD** | Clear **domain** boundaries (trade bill on Soroban vs Etherfuse ramp), ubiquitous language aligned with contract/API, business rules **outside** HTTP handlers, rich models or domain services where useful, **anti-corruption layer** between “our domain” and SDKs (Stellar, Etherfuse). |
+| **CQRS** | Separate **commands** (mutate state: create quote, create order, simulate `issue`, confirm `txHash`, apply webhook) from **queries** (read-only: `GET` ramp order, `GET` trade bill, assets, `get_trade_bill` on-chain). Can start as **module separation**; separate read models only when there is measurable benefit. |
+
+**Not required** in the first iteration: Event Sourcing, distributed message bus, or read models in a separate database — CQRS is a **spectrum** ([Fowler](https://martinfowler.com/bliki/CQRS.html)).
+
+---
+
+## 2. Map of what exists today (`src/`)
 
 ```
-packages/api/src/
-├── server.ts                 # composição: DB, migrações, registo de rotas
+src/
+├── server.ts                 # composition: DB, migrations, route registration
 ├── config.ts                 # env / AppConfig
 ├── db/
-│   ├── index.ts              # Drizzle + SQLite, migrate no boot
-│   └── schema.ts             # tabelas: ramp_quotes, ramp_orders, duplicata_drafts, duplicata_chain_records
+│   ├── index.ts              # Drizzle + SQLite, migrate on boot
+│   └── schema.ts             # tables: ramp_quotes, ramp_orders, trade_bill_drafts, trade_bill_chain_records
 ├── plugins/
 │   └── dupply-auth.ts        # X-Dupply-Api-Key
 ├── routes/v1/
 │   ├── ramp.ts               # GET assets, POST quotes, POST orders, GET order — Zod + EtherfuseClient + Drizzle inline
-│   ├── duplicatas.ts         # POST/GET duplicatas, confirm — Zod + domain + issue-flow + confirm-tx + Drizzle inline
-│   └── webhook-etherfuse.ts  # POST webhook — verificação assinatura + update ramp_orders
-├── domain/duplicata/
+│   ├── trade-bills.ts        # POST/GET trade bills, confirm — Zod + domain + issue-flow + confirm-tx + Drizzle inline
+│   └── webhook-etherfuse.ts  # POST webhook — signature verify + ramp_orders update
+├── domain/tradeBill/
 │   ├── dto.ts                # Zod schemas + validateIssueInvariants + DomainError
-│   └── map-issue-payload.ts  # HTTP body → IssuePayload (contrato)
+│   └── map-issue-payload.ts  # HTTP body → IssuePayload (contract)
 ├── integrations/
-│   ├── etherfuse/            # client HTTP, webhook-verify
+│   ├── etherfuse/            # HTTP client, webhook-verify
 │   ├── registry/             # issue-flow (simulate), confirm-tx
 │   └── stellar/              # network passphrase helper
-└── generated/                # bindings Soroban (gerados)
+└── generated/                # Soroban bindings (generated from Wasm)
 ```
 
-### 2.1 Forças atuais (o que já está bem encaminhado)
+### 2.1 Current strengths
 
-- **Integrações isoladas** em `integrations/` (Etherfuse, registry, Stellar).  
-- **Duplicata**: parte de validação e mapeamento DTO → contrato em `domain/duplicata/`.  
-- **Persistência** explícita em Drizzle com schema único.  
-- **Erros de domínio** tipados em vários sítios (`DomainError`, `IssuerNotAllowedError`, etc.) e mapeados para HTTP nas rotas.
+- **Integrations** isolated under `integrations/` (Etherfuse, registry, Stellar).  
+- **Trade bill:** part of validation and DTO → contract mapping in `domain/tradeBill/`.  
+- **Persistence** explicit in Drizzle with a single schema.  
+- **Domain errors** typed in several places (`DomainError`, `IssuerNotAllowedError`, etc.) and mapped to HTTP in routes.
 
-### 2.2 Limitações vs DDD + CQRS (dívida estrutural)
+### 2.2 Limitations vs DDD + CQRS (structural debt)
 
-| Área | Situação hoje | Tensão |
-|------|----------------|--------|
-| **Application layer** | Lógica de orquestração (validar → chamar integração → `db.insert/update`) mora nas **rotas** (`ramp.ts`, `duplicatas.ts`). | Rotas ficam grandes; difícil testar fluxo sem HTTP; mistura “caso de uso” com serialização. |
-| **Ramp** | Não há pasta `domain/ramp`; regras e shapes Zod estão colados ao Fastify. | Segundo bounded context sem “coração” de domínio visível. |
-| **CQRS** | `GET` e `POST` partilham os mesmos tipos/tabelas e o mesmo código de acesso; não há interfaces `CommandHandler` / `QueryHandler`. | Evolução para read models ou filas fica sem encaixe natural. |
-| **Repositórios** | Drizzle chamado **diretamente** nas rotas. | Domínio fica acoplado a SQL/Drizzle; troca de BD ou testes com duplos exige mockar módulos de rota. |
-| **Webhook** | Atualização de `ramp_orders` inline após verificar assinatura. | É um **comando** assíncrono na prática; poderia ser handler + idempotência explícita (event id). |
-| **Bounded contexts** | Dois contextos (Ramp / Duplicata) partilham `server.ts`, `db`, auth. | OK para monólito modular; falta só **fronteira explícita** (pastas ou pacotes `application/ramp`, `application/duplicata`). |
+| Area | Today | Tension |
+|------|-------|---------|
+| **Application layer** | Orchestration (validate → call integration → `db.insert/update`) lives in **routes** (`ramp.ts`, `trade-bills.ts`). | Routes grow large; hard to test flow without HTTP; mixes “use case” with serialization. |
+| **Ramp** | No `domain/ramp` folder; Zod rules are glued to Fastify. | Second bounded context without a visible domain “core”. |
+| **CQRS** | `GET` and `POST` share types/tables and access code; no `CommandHandler` / `QueryHandler` interfaces. | Evolving toward read models or queues has no natural seam. |
+| **Repositories** | Drizzle called **directly** in routes. | Domain stays coupled to SQL/Drizzle; swapping DB or testing with doubles requires mocking route modules. |
+| **Webhook** | Updates `ramp_orders` inline after verifying signature. | Conceptually an **async command**; could be handler + explicit idempotency (event id). |
+| **Bounded contexts** | Ramp and trade bill share `server.ts`, `db`, auth. | OK for a modular monolith; missing only an **explicit boundary** (folders or `application/ramp`, `application/tradeBill`). |
 
 ---
 
-## 3. Visão alvo (alto nível) — monólito modular DDD-friendly + CQRS leve
+## 3. Target vision (high level) — DDD-friendly modular monolith + light CQRS
 
 ```text
 ┌─────────────────────────────────────────────────────────────┐
-│  interfaces/http (Fastify) — controllers finos             │
-│    → traduz HTTP ↔ Command / Query DTOs                    │
+│  interfaces/http (Fastify) — thin controllers               │
+│    → translate HTTP ↔ Command / Query DTOs                  │
 └───────────────────────────┬─────────────────────────────────┘
                             │
 ┌───────────────────────────▼─────────────────────────────────┐
-│  application (casos de uso)                                 │
-│    commands/   CreateRampQuoteHandler, ConfirmDuplicata…    │
-│    queries/    GetRampOrderHandler, GetDuplicataHandler…    │
+│  application (use cases)                                    │
+│    commands/   CreateRampQuoteHandler, ConfirmTradeBillTx…  │
+│    queries/    GetRampOrderHandler, GetTradeBillHandler…    │
 └───────────────────────────┬─────────────────────────────────┘
                             │
         ┌───────────────────┼───────────────────┐
         ▼                   ▼                   ▼
 ┌───────────────┐  ┌────────────────┐  ┌──────────────────────┐
 │ domain/       │  │ domain/        │  │ integrations/       │
-│ duplicata     │  │ ramp (novo)    │  │ etherfuse, stellar  │
-│ (entidades,   │  │ políticas,     │  │ registry, …         │
-│  serviços)    │  │  value objects)│  │ (ACL)               │
+│ tradeBill     │  │ ramp (new)     │  │ etherfuse, stellar  │
+│ (entities,    │  │ policies,      │  │ registry, …         │
+│  services)    │  │  value objects)│  │ (ACL)               │
 └───────┬───────┘  └────────┬───────┘  └──────────┬───────────┘
         │                   │                     │
         └───────────────────┼─────────────────────┘
@@ -94,107 +94,107 @@ packages/api/src/
                  └─────────────────────┘
 ```
 
-- **Commands** retornam void ou um id / resultado mínimo; falhas como `Result` ou exceções de domínio mapeadas uma vez no HTTP.  
-- **Queries** não alteram estado; podem usar o mesmo Drizzle ou, mais tarde, views/read models.
+- **Commands** return void or a minimal id/result; failures as `Result` or domain exceptions mapped once at HTTP.  
+- **Queries** do not mutate state; may use the same Drizzle or later views/read models.
 
 ---
 
-## 4. Inventário por bounded context
+## 4. Inventory by bounded context
 
-### 4.1 Rampa (Etherfuse)
+### 4.1 Ramp (Etherfuse)
 
-| Operação (HTTP) | Tipo CQRS | Hoje | Refatoração sugerida |
-|-----------------|-----------|------|----------------------|
-| `GET /v1/ramp/assets` | Query | Rota + `EtherfuseClient` | `GetRampAssetsQuery` + handler; client injetado. |
-| `POST /v1/ramp/quotes` | Command | Rota + client + insert quote | `CreateRampQuoteCommand` + `RampQuoteRepository` + domínio mínimo (expiração, provider). |
-| `POST /v1/ramp/orders` | Command | Rota + client + insert order | `CreateRampOrderCommand` + validar quote existente no domínio/repo. |
-| `GET /v1/ramp/orders/:id` | Query | Rota + select | `GetRampOrderByIdQuery`; opcionalmente projeção DTO de leitura. |
-| Webhook Etherfuse | Command | `webhook-etherfuse.ts` | `ApplyRampWebhookCommand` + idempotência (`eventId` se existir na payload). |
+| HTTP operation | CQRS type | Today | Suggested refactor |
+|----------------|-----------|-------|---------------------|
+| `GET /v1/ramp/assets` | Query | Route + `EtherfuseClient` | `GetRampAssetsQuery` + handler; injected client. |
+| `POST /v1/ramp/quotes` | Command | Route + client + insert quote | `CreateRampQuoteCommand` + `RampQuoteRepository` + minimal domain (expiry, provider). |
+| `POST /v1/ramp/orders` | Command | Route + client + insert order | `CreateRampOrderCommand` + validate existing quote in domain/repo. |
+| `GET /v1/ramp/orders/:id` | Query | Route + select | `GetRampOrderByIdQuery`; optional read DTO projection. |
+| Etherfuse webhook | Command | `webhook-etherfuse.ts` | `ApplyRampWebhookCommand` + idempotency (`eventId` if present in payload). |
 
-### 4.2 Duplicata (registry Soroban)
+### 4.2 Trade bill (Soroban registry)
 
-| Operação (HTTP) | Tipo CQRS | Hoje | Refatoração sugerida |
-|-----------------|-----------|------|----------------------|
-| `POST /v1/duplicatas` | Command | Rota + `validateIssueInvariants` + `simulateIssue` + insert | `SimulateDuplicataIssueCommand` + agregar `DuplicataDraft` (opcional) ou serviço de domínio. |
-| `POST /v1/duplicatas/:id/confirm` | Command | Rota + `parseSuccessfulIssueTx` + inserts | `ConfirmDuplicataTxCommand`. |
-| `GET /v1/duplicatas/:id` | Query | Rota + joins lógicos | `GetDuplicataByIdQuery`. |
-| `GET /v1/duplicatas/on-chain/:chainId` | Query | Rota + simulação leitura | `GetDuplicataOnChainQuery` (ACL já em registry). |
-
----
-
-## 5. O que refazer / arrumar (backlog sugerido)
-
-### Fase A — CQRS “mecânico”, sem mudar BD
-
-1. Criar `src/application/` com subpastas `commands`, `queries` (ou por contexto `ramp/`, `duplicata/`).  
-2. Extrair cada fluxo das rotas para **uma função/handler** por caso de uso (`executeCreateRampQuote(...)`), com dependências explícitas (`deps: { rampQuoteRepo, etherfuse }`).  
-3. Rotas: `parse` Zod → chamar handler → mapear erro → status HTTP (um único `mapDomainErrorToHttp` por contexto).  
-4. Testes unitários nos handlers com **repos in-memory** ou Drizzle em memória.
-
-### Fase B — Repositórios (DDD infrastructure)
-
-1. Interfaces `RampQuoteRepository`, `RampOrderRepository`, `DuplicataDraftRepository`, `DuplicataChainRepository` em `domain` ou `application/ports`.  
-2. Implementações Drizzle em `infrastructure/persistence/` (thin wrappers sobre `schema.ts`).  
-3. `domain/duplicata` ganha tipos de agregado ou factory se quiserem invariantes no objeto (ex.: não permitir `confirm` sem `simulated`).
-
-### Fase C — Domínio ramp
-
-1. `domain/ramp/` com value objects (`QuoteAssets`, `MoneyAmount` string) se quiserem validação central.  
-2. Política de `resolveAssetIdentifiers` como serviço de domínio chamando a ACL Etherfuse.
-
-### Fase D — CQRS “mais forte” (opcional, com critério)
-
-1. DTOs de **leitura** distintos dos modelos de escrita (ex.: `RampOrderReadModel` sem `requestJson` bruto se não for necessário na API pública).  
-2. Webhook enfileirado (BullMQ / fila interna) se volume ou retries exigirem — alinha com “command assíncrono”.  
-3. Read replica ou materialized view só se latência/consultas complexas justificarem.
+| HTTP operation | CQRS type | Today | Suggested refactor |
+|----------------|-----------|-------|---------------------|
+| `POST /v1/trade-bills` | Command | Route + `validateIssueInvariants` + `simulateIssue` + insert | `SimulateTradeBillIssueCommand` + optional `TradeBillDraft` aggregate or domain service. |
+| `POST /v1/trade-bills/:id/confirm` | Command | Route + `parseSuccessfulIssueTx` + inserts | `ConfirmTradeBillTxCommand`. |
+| `GET /v1/trade-bills/:id` | Query | Route + logical joins | `GetTradeBillByIdQuery`. |
+| `GET /v1/trade-bills/on-chain/:chainId` | Query | Route + read simulation | `GetTradeBillOnChainQuery` (ACL already in registry). |
 
 ---
 
-## 6. O que **não** precisa mudar à pressa
+## 5. Refactor backlog (suggested)
 
-- **Schema Drizzle** e migrações (só renomear colunas se a linguagem ubíqua mudar).  
-- **EtherfuseClient** e **issue-flow** como ACL — podem mudar de pasta para `infrastructure` mas a lógica HTTP/Soroban pode migrar aos poucos.  
-- **Bindings gerados** em `generated/`.  
-- **Contrato Soroban** e `IssuePayload` — fonte de verdade externa ao “estilo DDD”.
+### Phase A — “Mechanical” CQRS, no DB change
+
+1. Create `src/application/` with `commands`, `queries` (or per context `ramp/`, `tradeBill/`).  
+2. Extract each route flow to **one function/handler** per use case (`executeCreateRampQuote(...)`), with explicit deps (`deps: { rampQuoteRepo, etherfuse }`).  
+3. Routes: Zod `parse` → call handler → map error → HTTP status (single `mapDomainErrorToHttp` per context).  
+4. Unit tests on handlers with **in-memory repos** or Drizzle `:memory:`.
+
+### Phase B — Repositories (DDD infrastructure)
+
+1. Interfaces `RampQuoteRepository`, `RampOrderRepository`, `TradeBillDraftRepository`, `TradeBillChainRepository` in `domain` or `application/ports`.  
+2. Drizzle implementations in `infrastructure/persistence/` (thin wrappers over `schema.ts`).  
+3. `domain/tradeBill` gains aggregate types or factories if you want invariants on the object (e.g. no `confirm` without `simulated`).
+
+### Phase C — Ramp domain
+
+1. `domain/ramp/` with value objects (`QuoteAssets`, `MoneyAmount` as string) if you want centralized validation.  
+2. `resolveAssetIdentifiers` policy as a domain service calling the Etherfuse ACL.
+
+### Phase D — “Stronger” CQRS (optional, gated)
+
+1. Distinct **read** DTOs from write models (e.g. `RampOrderReadModel` without raw `requestJson` if not needed publicly).  
+2. Webhook queue (BullMQ / internal queue) if volume or retries require — aligns with “async command”.  
+3. Read replica or materialized view only if latency/complex queries justify it.
 
 ---
 
-## 7. Riscos e mitigação
+## 6. What does **not** need to change urgently
 
-| Risco | Mitigação |
-|-------|-----------|
-| Refactor grande sem entrega | Fases A→B; manter rotas estáveis; testes de contrato HTTP (smoke) após cada PR. |
-| Over-engineering | Não introduzir agregados/event store até a equipa sentir dor (rotas > ~400 linhas ou bugs de estado). |
-| Duplicação DTO | Partilhar Zod entre “HTTP input” e “command payload” (um schema, dois nomes). |
+- **Drizzle schema** and migrations (rename columns only if ubiquitous language changes).  
+- **EtherfuseClient** and **issue-flow** as ACL — may move folder to `infrastructure` but HTTP/Soroban logic can migrate gradually.  
+- **Generated** bindings in `generated/`.  
+- **Soroban contract** and `IssuePayload` — external source of truth independent of “DDD style”.
+
+---
+
+## 7. Risks and mitigation
+
+| Risk | Mitigation |
+|------|------------|
+| Large refactor without delivery | Phases A→B; keep routes stable; HTTP contract (smoke) tests after each PR. |
+| Over-engineering | Do not introduce aggregates/event store until the team feels pain (routes > ~400 lines or state bugs). |
+| DTO duplication | Share Zod between “HTTP input” and “command payload” (one schema, two names). |
 
 ### Rollback
 
-Qualquer fase é reversível com `git revert` se os handlers forem PRs pequenos; manter **mesmas URLs e JSON** na v1.
+Any phase is reversible with `git revert` if handlers are small PRs; keep **same URLs and JSON** for `/v1/*` unless versioning.
 
 ---
 
-## 8. Critérios de “pronto o suficiente” para dizer que estamos em DDD + CQRS leve
+## 8. “Good enough” criteria for DDD + light CQRS
 
-- [ ] Nenhuma rota com orquestração > ~50 linhas (só delegação + erro HTTP).  
-- [ ] Cada mutação de estado passa por um **command handler** nomeado pelo caso de uso.  
-- [ ] Cada `GET` relevante passa por um **query handler**.  
-- [ ] Persistência atrás de **ports** (interfaces) testáveis.  
-- [ ] Documento ADR ou atualização a `DECISIONS.md` na raiz com a escolha “CQRS leve + monólito modular”.
-
----
-
-## 9. Próximo passo recomendado
-
-1. Aprovar este documento (ou ajustar vocabulário / fases).  
-2. Abrir issue ou PR só da **Fase A** num bounded context (sugestão: **ramp** primeiro — maior volume de lógica na rota).  
-3. Copiar smoke existente (`etherfuse-smoke`, `curl` manual) para checklist de regressão.
+- [ ] No route with orchestration > ~50 lines (only delegation + HTTP error).  
+- [ ] Each state mutation goes through a **named command handler**.  
+- [ ] Each relevant `GET` goes through a **query handler**.  
+- [ ] Persistence behind **ports** (interfaces) that are testable.  
+- [ ] ADR or `DECISIONS.md` update with “light CQRS + modular monolith”.
 
 ---
 
-## Referências (links)
+## 9. Recommended next step
+
+1. Approve this document (or adjust vocabulary / phases).  
+2. Open an issue or PR for **Phase A** in one bounded context (suggestion: **ramp** first — most logic in the route).  
+3. Copy existing smoke (`etherfuse-smoke`, manual `curl`) into a regression checklist.
+
+---
+
+## References
 
 1. CQRS — Martin Fowler — https://martinfowler.com/bliki/CQRS.html  
 2. CQRS pattern — Microsoft Azure Architecture — https://learn.microsoft.com/en-us/azure/architecture/patterns/cqrs  
 3. DDD Reference — Domain Language — https://www.domainlanguage.com/ddd/reference/  
-4. Plano v1 backend — `docs/notes/2026-05-16_dupply-backend-v1-plan.md`  
-5. Arquitetura duplicata + contrato — `docs/notes/2026-05-18_v1-duplicata-contract-integration-architecture.md`  
+4. Backend v1 plan — `docs/notes/2026-05-16_dupply-backend-v1-plan.md`  
+5. Trade bill + contract architecture — `docs/notes/2026-05-18_v1-duplicata-contract-integration-architecture.md`  
