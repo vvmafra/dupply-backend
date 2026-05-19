@@ -51,7 +51,7 @@ Legend: **Yes** = allowed. **Avoid** = legacy debt or documented exception only;
 ³ **HTTP → generated:** avoid; prefer registry / application flow.  
 ⁴ **Application / Integrations → generated:** Soroban contract bindings; concentrated in registry integration + trade-bill use cases.  
 ⁵ **Domain → Domain:** imports within the same context (`tradeBill/*`) allowed; keep acyclic.  
-⁶ **Domain → generated:** avoid; prefer domain types and map at the edge (`map-issue-payload` or application).  
+⁶ **Domain → generated:** avoid; prefer domain types and map at the edge (`application/tradeBill/mappers/bodyToIssuePayload` or application handlers).  
 ⁷ **Integrations → Integrations:** only shared helpers in the same area (e.g. `stellar/network` used by `registry`); **do not** import `etherfuse` from `registry` or vice versa.  
 ⁸ **Integrations / Infrastructure → config:** values injected by the composer (`server` / handler factory); **do not** read `process.env` inside `integrations` or `db`.
 

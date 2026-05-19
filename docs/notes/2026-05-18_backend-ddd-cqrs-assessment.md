@@ -28,16 +28,21 @@ src/
 │   └── schema.ts             # tables: ramp_quotes, ramp_orders, trade_bill_drafts, trade_bill_chain_records
 ├── plugins/
 │   └── dupply-auth.ts        # X-Dupply-Api-Key
+├── application/
+│   ├── deps.ts
+│   ├── ramp/queries/getRampAssets.ts
+│   └── tradeBill/
+│       ├── appConfigToRegistrySoroban.ts  # AppConfig → registry slice
+│       └── mappers/bodyToIssuePayload.ts  # validated body → IssuePayload
 ├── routes/v1/
 │   ├── ramp.ts               # GET assets, POST quotes, POST orders, GET order — Zod + EtherfuseClient + Drizzle inline
-│   ├── trade-bills.ts        # POST/GET trade bills, confirm — Zod + domain + issue-flow + confirm-tx + Drizzle inline
+│   ├── trade-bills.ts        # POST/GET trade bills, confirm — Zod + domain + application + issue-flow + Drizzle inline
 │   └── webhook-etherfuse.ts  # POST webhook — signature verify + ramp_orders update
 ├── domain/tradeBill/
-│   ├── dto.ts                # Zod schemas + validateIssueInvariants + DomainError
-│   └── map-issue-payload.ts  # HTTP body → IssuePayload (contract)
+│   └── dto.ts                # Zod schemas + validateIssueInvariants + DomainError
 ├── integrations/
 │   ├── etherfuse/            # HTTP client, webhook-verify
-│   ├── registry/             # issue-flow (simulate), confirm-tx
+│   ├── registry/             # soroban-config, issue-flow (simulate), confirm-tx
 │   └── stellar/              # network passphrase helper
 └── generated/                # Soroban bindings (generated from Wasm)
 ```
@@ -45,7 +50,7 @@ src/
 ### 2.1 Current strengths
 
 - **Integrations** isolated under `integrations/` (Etherfuse, registry, Stellar).  
-- **Trade bill:** part of validation and DTO → contract mapping in `domain/tradeBill/`.  
+- **Trade bill:** validation and invariants in `domain/tradeBill/`; HTTP → contract mapping in `application/tradeBill/mappers/`.
 - **Persistence** explicit in Drizzle with a single schema.  
 - **Domain errors** typed in several places (`DomainError`, `IssuerNotAllowedError`, etc.) and mapped to HTTP in routes.
 

@@ -1,10 +1,11 @@
 import { AssembledTransaction } from "@stellar/stellar-sdk/contract";
 import { Keypair } from "@stellar/stellar-sdk";
 
-import type { AppConfig } from "../../config.js";
 import { Client as RegistryContractClient } from "../../generated/trade-bill-registry-contract.js";
 import type { IssuePayload } from "../../generated/trade-bill-registry-contract.js";
 import { stellarNetworkPassphrase } from "../stellar/network.js";
+
+import type { RegistrySorobanConfig } from "./soroban-config.js";
 
 export class IssuerNotAllowedError extends Error {
   constructor() {
@@ -37,7 +38,9 @@ export class IssueSimulationError extends Error {
   }
 }
 
-function requireRegistryConfig(config: AppConfig): { contractId: string; rpcUrl: string } {
+function requireRegistryConfig(
+  config: RegistrySorobanConfig,
+): { contractId: string; rpcUrl: string } {
   const contractId = config.DUPPLY_REGISTRY_CONTRACT_ID;
   const rpcUrl = config.SOROBAN_RPC_URL;
   if (!contractId?.trim()) {
@@ -47,7 +50,7 @@ function requireRegistryConfig(config: AppConfig): { contractId: string; rpcUrl:
 }
 
 export function createRegistryClient(
-  config: AppConfig,
+  config: RegistrySorobanConfig,
   issuerPublicKey: string,
 ): RegistryContractClient {
   const { contractId, rpcUrl } = requireRegistryConfig(config);
@@ -65,7 +68,7 @@ export function createRegistryClient(
 }
 
 export async function assertIssuerAllowed(
-  config: AppConfig,
+  config: RegistrySorobanConfig,
   issuerPublicKey: string,
 ): Promise<void> {
   const client = createRegistryClient(config, issuerPublicKey);
@@ -77,7 +80,7 @@ export async function assertIssuerAllowed(
 }
 
 export async function simulateIssue(
-  config: AppConfig,
+  config: RegistrySorobanConfig,
   issuerPublicKey: string,
   payload: IssuePayload,
 ): Promise<{

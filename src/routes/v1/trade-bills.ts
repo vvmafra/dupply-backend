@@ -12,7 +12,8 @@ import {
   DomainError,
   validateIssueInvariants,
 } from "../../domain/tradeBill/dto.js";
-import { bodyToIssuePayload } from "../../domain/tradeBill/map-issue-payload.js";
+import { appConfigToRegistrySoroban } from "../../application/tradeBill/appConfigToRegistrySoroban.js";
+import { bodyToIssuePayload } from "../../application/tradeBill/mappers/bodyToIssuePayload.js";
 import type { TradeBill } from "../../generated/trade-bill-registry-contract.js";
 import { parseSuccessfulIssueTx, TxFailedError, TxNotFoundError } from "../../integrations/registry/confirm-tx.js";
 import {
@@ -66,7 +67,11 @@ export async function registerTradeBillRoutes(
     try {
       validateIssueInvariants(body);
       const payload = bodyToIssuePayload(body);
-      const sim = await simulateIssue(config, body.issuerPublicKey, payload);
+      const sim = await simulateIssue(
+        appConfigToRegistrySoroban(config),
+        body.issuerPublicKey,
+        payload,
+      );
       const id = randomUUID();
       const t = nowMs();
       await db.insert(tradeBillDrafts).values({
@@ -266,7 +271,7 @@ export async function registerTradeBillRoutes(
       return reply.code(400).send({ error: "issuer_query_required" });
     }
     try {
-      const client = createRegistryClient(config, issuer);
+      const client = createRegistryClient(appConfigToRegistrySoroban(config), issuer);
       const tx = await client.get_trade_bill({ id: BigInt(chainId) });
       await tx.simulate();
       const d = tx.result;

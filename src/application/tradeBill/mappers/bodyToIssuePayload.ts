@@ -1,14 +1,13 @@
 import { Buffer } from "buffer";
 
+import type { CreateTradeBillBody } from "../../../domain/tradeBill/dto.js";
 import {
   BillKind,
   DraweeAcceptance,
   EvidenceKind,
   FiscalDocKind,
   type IssuePayload,
-} from "../../generated/trade-bill-registry-contract.js";
-
-import type { CreateTradeBillBody } from "./dto.js";
+} from "../../../generated/trade-bill-registry-contract.js";
 
 function hashToBuffer(hex64: string): Buffer {
   return Buffer.from(hex64, "hex");
