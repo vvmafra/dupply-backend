@@ -2,7 +2,7 @@
 
 **Date:** 2026-05-16  
 **Scope:** Define **v1** of the service in `dupply-backend` (API + persistence + jobs) and **one** initial **ramp/exchange** integration, with documented preference for **Etherfuse FX API**, while keeping the design **extensible** for **SEP-24 anchors** later.  
-**Existing artifacts:** Soroban `DuplicataRegistry` contract (see `contracts/duplicata-registry/` and `DEPLOYMENT-testnet.md`); Node indexer skeleton in `indexer/`.
+**Existing artifacts:** Soroban `TradeBillRegistry` contract (see `soroban/` and `soroban/DEPLOYMENT-testnet.md`); indexer described in `indexer/README.md` (not implemented as a package).
 
 ---
 
@@ -10,10 +10,10 @@
 
 | ID | Goal | Success measure |
 |----|------|-----------------|
-| O1 | Expose a secure REST API for the (future) frontend to orchestrate duplicatas | Published OpenAPI; minimal working auth |
+| O1 | Expose a secure REST API for the (future) frontend to orchestrate trade bills | Published OpenAPI; minimal working auth |
 | O2 | Persist off-chain business state | PostgreSQL (or SQLite in dev only) with migrations |
 | O3 | Integrate **one** ramp provider | Sandbox flow: quote → order → persisted state |
-| O4 | Correlate ramp with chain | Store `stellar_tx_hash` / `contract_id` / `duplicata_id` when applicable |
+| O4 | Correlate ramp with chain | Store `stellar_tx_hash` / `contract_id` / `chain_bill_id` when applicable |
 | O5 | Observability | Structured logs, health check, basic metrics |
 
 **Explicitly out of scope v1:** new UI; centralized custody of user keys without a clear legal model; mainnet in production without a compliance review.
@@ -30,7 +30,7 @@ flowchart LR
   subgraph dupply_api [Dupply API v1]
     HTTP[HTTP REST]
     AUTH[Auth JWT or API key]
-    DUP[DuplicataService]
+    DUP[TradeBillService]
     RAILS[RailsProvider]
     DB[(PostgreSQL)]
   end
@@ -51,12 +51,12 @@ flowchart LR
 
 ### 2.1 Suggested modules
 
-1. **`api/`** — routes, input validation, serialization, rate limiting.  
-2. **`domain/duplicata/`** — business rules, internal IDs, link to indexer events.  
+1. **`src/`** (HTTP API) — routes, input validation, serialization, rate limiting.  
+2. **`domain/tradeBill/`** — business rules, internal IDs, link to indexer events.  
 3. **`integrations/rails/`** — `RailsProvider` interface + `EtherfuseRailsProvider` implementation.  
 4. **`integrations/stellar/`** — Horizon/RPC reads, XDR preparation (if the backend signs or only simulates).  
 5. **`workers/`** — queue (e.g. BullMQ + Redis) for webhooks, order-state reconciliation.  
-6. **`indexer/`** — skeleton already exists; v1 may consume events and write to the same DB via internal API or shared library.
+6. **Indexer** — future worker; see `indexer/README.md`; v1 may consume events and write to the same DB via internal API or shared library.
 
 ---
 
@@ -64,7 +64,7 @@ flowchart LR
 
 | Layer | Suggested choice | Rationale |
 |-------|------------------|-----------|
-| Runtime | Node.js 22 LTS | Matches existing `indexer/` |
+| Runtime | Node.js 22 LTS | Single Node app at repo root |
 | Framework | Fastify or Hono | Performance, TS typing |
 | ORM | Drizzle or Prisma | Migrations and type-safety |
 | Auth | JWT (RS256) from this backend + optional refresh v2 | v1 simplicity |
@@ -80,7 +80,7 @@ flowchart LR
 Minimum entities:
 
 - **`users`** — external id (wallet `G...` or future OIDC subject), `created_at`.  
-- **`duplicatas`** — fields mirroring the contract + `chain_duplicata_id` + `contract_address` + `network` (testnet/mainnet).  
+- **`trade_bills`** — fields mirroring the contract + `chain_bill_id` + `contract_address` + `network` (testnet/mainnet).  
 - **`ramp_quotes`** — provider (`etherfuse`), request/response JSON payload, `expires_at`, status.  
 - **`ramp_orders`** — `quote_id`, `external_order_id`, state, amounts, `user_id`.  
 - **`chain_events`** — indexer cursor, `tx_hash`, normalized payload.
@@ -115,9 +115,9 @@ Illustrative route names:
 - `POST /v1/webhooks/etherfuse` with signature verification (per docs).  
 - Worker updates `ramp_orders` and emits internal notification (websocket v2).
 
-### Phase 4 — Link to duplicata
+### Phase 4 — Link to trade bill
 
-- When `issue` is executed on chain (by client or by a backend-prepared transaction), store `duplicata_id` and `ramp_order_id` in the same DB transaction (eventual consistency).
+- When `issue` is executed on chain (by client or by a backend-prepared transaction), store `chain_bill_id` and `ramp_order_id` in the same DB transaction (eventual consistency).
 
 ---
 

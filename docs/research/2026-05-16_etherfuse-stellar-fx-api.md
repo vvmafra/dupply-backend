@@ -67,18 +67,18 @@ The documentation references a sandbox host for testing without real funds, for 
 
 ---
 
-## 4. Fit with `duplicata-registry` (Soroban)
+## 4. Fit with the trade-bill Soroban registry (`duplicata-registry` crate)
 
 The current contract:
 
-- Records **duplicata metadata** on chain (issuer, drawee, amounts, hashes, etc.).  
+- Records **trade bill metadata** on chain (issuer, drawee, amounts, hashes, etc.).  
 - Does **not** move fiat money.  
 - Does **not** replace bank or ramp-provider KYC.
 
 A coherent product flow would be:
 
 1. **Off-chain / ramp:** user converts or deposits via **Etherfuse** (or an anchor) to obtain **USDC/XLM/stable** on Stellar.  
-2. **On-chain:** user (or an authorized agent) calls `issue` on the **registry** to anchor the duplicata on chain.  
+2. **On-chain:** user (or an authorized agent) calls `issue` on the **registry** to anchor the trade bill on chain.  
 3. **Indexer:** correlates `DuplicataIssued` events with Etherfuse order IDs in your DB (optional but strong for audit).
 
 ---

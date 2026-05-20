@@ -66,7 +66,7 @@ This parallels **Etherfuse Quotes** mentally, but with **different fields and en
 
 Recent SEP-24 flow documentation mentions **SEP-45** for authentication when the account is a **contract account**. This matters because:
 
-- `duplicata-registry` is **Soroban**; end users may interact via **`C...` smart wallets**.  
+- The trade-bill registry is **Soroban**; end users may interact via **`C...` smart wallets**.  
 - Not all anchors / wallets support the same maturity for **contract signers**.
 
 **Action:** before committing to “Soroban-only” UX, validate with 1–2 target anchors whether SEP-24 + SEP-45 is operational for your use case.
