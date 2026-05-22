@@ -5,13 +5,18 @@
   "type": "module",
   "description": "Dupply backend: Fastify HTTP API (src/), Soroban contracts (soroban/)",
   "scripts": {
-    "dev": "tsx watch src/server.ts",
-    "start": "tsx src/server.ts",
+    "dev": "NODE_OPTIONS='--dns-result-order=ipv4first' tsx watch --env-file=.env src/server.ts",
+    "start": "NODE_OPTIONS='--dns-result-order=ipv4first' tsx --env-file=.env src/server.ts",
     "build": "tsc -p tsconfig.build.json",
+    "lint": "tsc -p tsconfig.json",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
-    "etherfuse:smoke": "tsx scripts/etherfuse-smoke.ts"
+    "db:push": "NODE_OPTIONS='--dns-result-order=ipv4first' node --env-file=.env ./node_modules/drizzle-kit/bin.cjs push --verbose",
+    "db:push:supabase": "NODE_OPTIONS='--dns-result-order=ipv4first' node --env-file=.env ./node_modules/drizzle-kit/bin.cjs push",
+    "etherfuse:smoke": "tsx scripts/etherfuse-smoke.ts",
+    "etherfuse:kyc-smoke": "NODE_OPTIONS='--dns-result-order=ipv4first' tsx --env-file=.env scripts/etherfuse-kyc-smoke.ts",
+    "seed:platform:dev": "NODE_OPTIONS='--dns-result-order=ipv4first' tsx --env-file=.env scripts/seed-platform-dev.ts",
+    "test": "node --import tsx --test src/domain/receivable/transitions.test.ts"
   },
   "engines": {
     "node": ">=20"
@@ -19,16 +24,20 @@
   "dependencies": {
     "@stellar/stellar-base": "^14.0.0",
     "@stellar/stellar-sdk": "^14.6.1",
+    "argon2": "^0.44.0",
     "better-sqlite3": "^11.10.0",
     "buffer": "^6.0.3",
     "canonicalize": "^2.1.0",
-    "drizzle-orm": "^0.44.2",
+    "drizzle-orm": "^0.45.2",
     "fastify": "^5.2.2",
+    "jose": "^6.2.3",
+    "pg": "^8.21.0",
     "zod": "^3.24.4"
   },
   "devDependencies": {
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.13.5",
+    "@types/pg": "^8.20.0",
     "drizzle-kit": "^0.31.1",
     "tsx": "^4.19.3",
     "typescript": "^5.7.3"

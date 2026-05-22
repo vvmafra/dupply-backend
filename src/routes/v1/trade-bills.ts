@@ -5,7 +5,7 @@ import { eq } from "drizzle-orm";
 
 import type { AppConfig } from "../../config.js";
 import type { Db } from "../../db/index.js";
-import { tradeBillChainRecords, tradeBillDrafts } from "../../db/schema.js";
+import { tradeBillChainRecords, tradeBillDrafts } from "../../db/schema.runtime.js";
 import {
   confirmTradeBillBodySchema,
   createTradeBillBodySchema,

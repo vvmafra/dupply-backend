@@ -1,7 +1,7 @@
-import { index, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { index, pgTable, text, uniqueIndex } from "drizzle-orm/pg-core";
 
-/** Platform identity: humans (password) or services (API key hash). */
-export const platformUsers = sqliteTable(
+/** Postgres schema (Supabase). Keep in sync with `schema.ts` (SQLite). */
+export const platformUsers = pgTable(
   "platform_users",
   {
     id: text("id").primaryKey(),
@@ -17,7 +17,7 @@ export const platformUsers = sqliteTable(
   (t) => [index("platform_users_role_idx").on(t.role)],
 );
 
-export const receivables = sqliteTable(
+export const receivables = pgTable(
   "receivables",
   {
     id: text("id").primaryKey(),
@@ -41,7 +41,7 @@ export const receivables = sqliteTable(
   ],
 );
 
-export const rampQuotes = sqliteTable(
+export const rampQuotes = pgTable(
   "ramp_quotes",
   {
     id: text("id").primaryKey(),
@@ -57,7 +57,7 @@ export const rampQuotes = sqliteTable(
   (t) => [index("ramp_quotes_external_quote_id_idx").on(t.externalQuoteId)],
 );
 
-export const rampOrders = sqliteTable(
+export const rampOrders = pgTable(
   "ramp_orders",
   {
     id: text("id").primaryKey(),
@@ -78,7 +78,7 @@ export const rampOrders = sqliteTable(
   ],
 );
 
-export const tradeBillDrafts = sqliteTable("trade_bill_drafts", {
+export const tradeBillDrafts = pgTable("trade_bill_drafts", {
   id: text("id").primaryKey(),
   issuerPublicKey: text("issuer_public_key").notNull(),
   status: text("status").notNull().default("draft"),
@@ -92,7 +92,7 @@ export const tradeBillDrafts = sqliteTable("trade_bill_drafts", {
   updatedAtMs: text("updated_at_ms").notNull(),
 });
 
-export const tradeBillChainRecords = sqliteTable(
+export const tradeBillChainRecords = pgTable(
   "trade_bill_chain_records",
   {
     id: text("id").primaryKey(),
