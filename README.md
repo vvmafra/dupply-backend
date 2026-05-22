@@ -36,6 +36,8 @@ cp .env.example .env   # edit DUPPLY_API_KEY, JWT_SECRET (min 16 chars), optiona
 npm run dev
 ```
 
+**Render / produção:** variáveis no painel do serviço (não há `.env` no deploy). Build: `npm install && npm run build`. Start: `npm start` → `node dist/server.js`. Ver [docs/notes/2026-05-22_render-deploy.md](docs/notes/2026-05-22_render-deploy.md).
+
 Full service documentation: **[API.md](API.md)**.
 
 HTTP endpoints (prefix = server root, e.g. `http://localhost:8080`):
