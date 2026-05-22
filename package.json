@@ -6,7 +6,8 @@
   "description": "Dupply backend: Fastify HTTP API (src/), Soroban contracts (soroban/)",
   "scripts": {
     "dev": "NODE_OPTIONS='--dns-result-order=ipv4first' tsx watch --env-file=.env src/server.ts",
-    "start": "NODE_OPTIONS='--dns-result-order=ipv4first' tsx --env-file=.env src/server.ts",
+    "start": "NODE_OPTIONS='--dns-result-order=ipv4first' node dist/server.js",
+    "start:local": "NODE_OPTIONS='--dns-result-order=ipv4first' tsx --env-file=.env src/server.ts",
     "build": "tsc -p tsconfig.build.json",
     "lint": "tsc -p tsconfig.json",
     "db:generate": "drizzle-kit generate",
