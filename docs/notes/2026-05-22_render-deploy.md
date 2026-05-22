@@ -4,7 +4,9 @@
 
 `npm start` usava `tsx --env-file=.env`. O ficheiro `.env` não existe no Render (está no `.gitignore`); variáveis vêm do **Environment** do serviço.
 
-**Correção:** `start` → `node dist/server.js` (sem `--env-file`). Local com `.env`: `npm run start:local`.
+**Correções:**
+1. `start` → `node dist/server.js` (sem `--env-file`). Local com `.env`: `npm run start:local`.
+2. `tsconfig.build.json` com `rootDir: "src"` — senão o `tsc` gera `dist/src/server.js` e o start falha com `MODULE_NOT_FOUND`.
 
 ## Render — configurar
 
