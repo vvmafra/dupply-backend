@@ -5,7 +5,7 @@ import { z } from "zod";
 
 import type { AppDeps } from "../../application/deps.js";
 import { executeGetRampAssets } from "../../application/ramp/queries/getRampAssets.js";
-import { rampOrders, rampQuotes } from "../../db/schema.js";
+import { rampOrders, rampQuotes } from "../../db/schema.runtime.js";
 import {
   EtherfuseClient,
   EtherfuseHttpError,

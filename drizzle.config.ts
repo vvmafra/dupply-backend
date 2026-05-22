@@ -1,10 +1,16 @@
 import { defineConfig } from "drizzle-kit";
 
+const databaseUrl = process.env.DATABASE_URL ?? "file:./data/dupply.db";
+const postgres =
+  databaseUrl.startsWith("postgresql://") || databaseUrl.startsWith("postgres://");
+
 export default defineConfig({
-  schema: "./src/db/schema.ts",
+  // SQLite tables use sqliteTable; Postgres (Supabase) needs pgTable — see schema.pg.ts
+  schema: postgres ? "./src/db/schema.pg.ts" : "./src/db/schema.ts",
   out: "./drizzle",
-  dialect: "sqlite",
+  dialect: postgres ? "postgresql" : "sqlite",
+  schemaFilter: postgres ? ["public"] : undefined,
   dbCredentials: {
-    url: process.env.DATABASE_URL ?? "file:./data/dupply.db",
+    url: databaseUrl,
   },
 });

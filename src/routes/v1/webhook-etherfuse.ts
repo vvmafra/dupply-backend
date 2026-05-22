@@ -3,7 +3,7 @@ import { eq } from "drizzle-orm";
 
 import type { AppConfig } from "../../config.js";
 import type { Db } from "../../db/index.js";
-import { rampOrders } from "../../db/schema.js";
+import { rampOrders } from "../../db/schema.runtime.js";
 import { verifyEtherfuseWebhookSignature } from "../../integrations/etherfuse/webhook-verify.js";
 
 function readOrderId(body: Record<string, unknown>): string | undefined {

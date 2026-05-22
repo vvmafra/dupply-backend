@@ -18,6 +18,14 @@ Short log of decisions that affect repository design. Details and migration phas
 
 ---
 
+## 2026-05-19 — v1 platform auth, RBAC roles, and receivable lifecycle
+
+**Decision:** **Login and JWT issuance** live in **Dupply’s backend**. **Human users** authenticate with **JWT**; **server-to-server** callers keep **`X-Dupply-Api-Key`**. User principals include **people** and **service accounts**. **Seller** and **payer** are **always distinct** identities. v1 **roles:** `seller`, `payer`, `admin`, `risk_analyst`, `risk_analyst_agent` (latter reserved for future automation, e.g. n8n). **Receivable** transitions: **create** persists **`under_review` immediately** (no persisted `created` status); **`created_at` + `updated_at`** on the row; `risk_analyst` or `risk_analyst_agent` → `offer` or `repproved`; payer → `confirmed`; **`processing` and `completed` are system-only** (no business user). **No** seller “approved after offer” step in v1 (differs from early sketch).
+
+**References:** [`docs/notes/2026-05-19_platform-auth-rbac-receivable-v1.md`](docs/notes/2026-05-19_platform-auth-rbac-receivable-v1.md)
+
+---
+
 ## 2026-05-18 — Repository layout (`src/` + `soroban/`)
 
 **Decision:** A single **Node package at the repo root** (`package.json`, `src/`, `drizzle/`, `scripts/`). Soroban contract in **`soroban/`** with crate at `soroban/crates/duplicata-registry`. The former **indexer** npm package was removed (stub only); **`indexer/README.md`** documents future work.

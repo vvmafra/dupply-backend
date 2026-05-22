@@ -6,5 +6,5 @@
     "sourceMap": true
   },
   "include": ["src/**/*.ts"],
-  "exclude": ["scripts"]
+  "exclude": ["scripts", "src/**/*.test.ts"]
 }

@@ -4,6 +4,26 @@
  * @see https://docs.etherfuse.com/overview
  */
 
+import type {
+  CreateChildOrganizationRequest,
+  CreateChildOrganizationResponse,
+  KycStatusResponse,
+  SubmitKycRequest,
+  SubmitKycResponse,
+  UploadKycDocumentsRequest,
+  UploadKycDocumentsResponse,
+} from "./kyc-types.js";
+
+export type {
+  CreateChildOrganizationRequest,
+  CreateChildOrganizationResponse,
+  KycStatusResponse,
+  SubmitKycRequest,
+  SubmitKycResponse,
+  UploadKycDocumentsRequest,
+  UploadKycDocumentsResponse,
+} from "./kyc-types.js";
+
 export type Blockchain = "stellar" | "solana" | "base" | "polygon" | "monad";
 
 export type QuoteAssets =
@@ -178,5 +198,42 @@ export class EtherfuseClient {
 
   createOrder(body: CreateOrderRequest): Promise<unknown> {
     return this.postJson("/ramp/order", body);
+  }
+
+  /**
+   * POST /ramp/organization — child org for a customer (step 1 programmatic onboarding).
+   * @see https://docs.etherfuse.com/guides/onboarding-programmatic
+   */
+  createChildOrganization(
+    body: CreateChildOrganizationRequest,
+  ): Promise<CreateChildOrganizationResponse> {
+    return this.postJson("/ramp/organization", body);
+  }
+
+  /**
+   * POST /ramp/customer/{customerId}/kyc — submit identity (sandbox personal: often auto-approved).
+   * @see https://docs.etherfuse.com/api-reference/kyc/submit-kyc-identity-data
+   */
+  submitKycIdentity(customerId: string, body: SubmitKycRequest): Promise<SubmitKycResponse> {
+    return this.postJson(`/ramp/customer/${customerId}/kyc`, body);
+  }
+
+  /**
+   * POST /ramp/customer/{customerId}/kyc/documents — JPEG/PNG as data URLs (base64).
+   * @see https://docs.etherfuse.com/api-reference/kyc/upload-kyc-documents
+   */
+  uploadKycDocuments(
+    customerId: string,
+    body: UploadKycDocumentsRequest,
+  ): Promise<UploadKycDocumentsResponse> {
+    return this.postJson(`/ramp/customer/${customerId}/kyc/documents`, body);
+  }
+
+  /**
+   * GET /ramp/customer/{customerId}/kyc/{pubkey}
+   * @see https://docs.etherfuse.com/api-reference/kyc/get-kyc-status
+   */
+  getKycStatus(customerId: string, pubkey: string): Promise<KycStatusResponse> {
+    return this.getJson(`/ramp/customer/${customerId}/kyc/${encodeURIComponent(pubkey)}`);
   }
 }

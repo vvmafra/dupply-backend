@@ -12,6 +12,11 @@ const envSchema = z.object({
   STELLAR_NETWORK: z.enum(["testnet", "mainnet", "futurenet"]).default("testnet"),
   SOROBAN_RPC_URL: z.string().url().default("https://soroban-testnet.stellar.org"),
   DUPPLY_REGISTRY_CONTRACT_ID: z.string().optional(),
+  /** HS256 signing secret for JWT access tokens (required for `/v1/auth/*` and `/v1/receivables/*`). */
+  JWT_SECRET: z.string().min(16).optional(),
+  /** Access token TTL in seconds (default 3600). */
+  JWT_ACCESS_TTL_SECONDS: z.coerce.number().int().positive().max(86400).default(3600),
+  JWT_ISSUER: z.string().min(1).default("dupply-backend"),
 });
 
 export type AppConfig = z.infer<typeof envSchema>;
