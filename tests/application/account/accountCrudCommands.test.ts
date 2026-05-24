@@ -20,8 +20,8 @@ import {
   AuthError,
 } from "../../../src/domain/account/errors.js";
 import type { AppDeps } from "../../../src/application/deps.js";
+import { insertAccount, TEST_PASSWORD } from "../../helpers/sellerTestHelpers.js";
 
-const TEST_PASSWORD = "test-password-123";
 const NEW_PASSWORD = "new-password-456";
 
 type TestContext = {
@@ -39,36 +39,18 @@ async function createTestContext(): Promise<TestContext> {
   return { deps: { db: handle.db, config }, handle };
 }
 
-async function insertAccount(
+async function insertAccountLegacy(
   deps: AppDeps,
   overrides: Partial<typeof accounts.$inferInsert> = {},
 ): Promise<{ id: string; email: string }> {
-  const id = createId();
-  const email = overrides.email ?? `user-${id}@example.com`;
-  const passwordHash = overrides.passwordHash ?? (await argon2.hash(TEST_PASSWORD));
-  const now = new Date();
-
-  await deps.db.insert(accounts).values({
-    id,
-    email,
-    passwordHash,
-    role: "seller",
-    status: "active",
-    refreshToken: null,
-    refreshTokenLookup: null,
-    createdAt: now,
-    updatedAt: now,
-    deletedAt: null,
-    ...overrides,
-  });
-
-  return { id, email };
+  const result = await insertAccount(deps, overrides);
+  return { id: result.id, email: result.email };
 }
 
 test("executeGetAccount returns public view for owner without secrets", async () => {
   const { deps, handle } = await createTestContext();
   try {
-    const { id, email } = await insertAccount(deps);
+    const { id, email } = await insertAccountLegacy(deps);
 
     const view = await executeGetAccount(deps, { sub: id, role: "seller" }, id);
 
@@ -88,7 +70,7 @@ test("executeGetAccount returns public view for owner without secrets", async ()
 test("executeGetAccount allows admin to read any account", async () => {
   const { deps, handle } = await createTestContext();
   try {
-    const { id } = await insertAccount(deps, { role: "risk_analyst" });
+    const { id } = await insertAccountLegacy(deps, { role: "risk_analyst" });
 
     const view = await executeGetAccount(deps, { sub: createId(), role: "admin" }, id);
 
@@ -102,8 +84,8 @@ test("executeGetAccount allows admin to read any account", async () => {
 test("executeGetAccount rejects non-admin reading another account", async () => {
   const { deps, handle } = await createTestContext();
   try {
-    const { id: ownerId } = await insertAccount(deps);
-    const { id: otherId } = await insertAccount(deps);
+    const { id: ownerId } = await insertAccountLegacy(deps);
+    const { id: otherId } = await insertAccountLegacy(deps);
 
     await assert.rejects(
       () => executeGetAccount(deps, { sub: ownerId, role: "seller" }, otherId),
@@ -121,7 +103,7 @@ test("executeGetAccount rejects non-admin reading another account", async () => 
 test("executeGetAccount returns not_found for soft-deleted account", async () => {
   const { deps, handle } = await createTestContext();
   try {
-    const { id } = await insertAccount(deps, { deletedAt: new Date() });
+    const { id } = await insertAccountLegacy(deps, { deletedAt: new Date() });
 
     await assert.rejects(
       () => executeGetAccount(deps, { sub: id, role: "seller" }, id),
@@ -139,7 +121,7 @@ test("executeGetAccount returns not_found for soft-deleted account", async () =>
 test("executeUpdatePassword allows login with new password", async () => {
   const { deps, handle } = await createTestContext();
   try {
-    const { id, email } = await insertAccount(deps);
+    const { id, email } = await insertAccountLegacy(deps);
 
     await executeUpdatePassword(deps, { sub: id, role: "seller" }, id, {
       password: NEW_PASSWORD,
@@ -164,7 +146,7 @@ test("executeUpdatePassword allows login with new password", async () => {
 test("executeUpdatePassword allows admin to update another account password", async () => {
   const { deps, handle } = await createTestContext();
   try {
-    const { id, email } = await insertAccount(deps);
+    const { id, email } = await insertAccountLegacy(deps);
 
     await executeUpdatePassword(deps, { sub: createId(), role: "admin" }, id, {
       password: NEW_PASSWORD,
@@ -180,7 +162,7 @@ test("executeUpdatePassword allows admin to update another account password", as
 test("executeSoftDeleteAccount soft-deletes account and invalidates refresh token", async () => {
   const { deps, handle } = await createTestContext();
   try {
-    const { id, email } = await insertAccount(deps);
+    const { id, email } = await insertAccountLegacy(deps);
     const login = await executeHumanLogin(deps, { email, password: TEST_PASSWORD });
 
     await executeSoftDeleteAccount(deps, { role: "admin" }, id);
@@ -224,7 +206,7 @@ test("executeSoftDeleteAccount soft-deletes account and invalidates refresh toke
 test("executeSoftDeleteAccount rejects non-admin", async () => {
   const { deps, handle } = await createTestContext();
   try {
-    const { id: otherId } = await insertAccount(deps);
+    const { id: otherId } = await insertAccountLegacy(deps);
 
     await assert.rejects(
       () => executeSoftDeleteAccount(deps, { role: "seller" }, otherId),

@@ -2,19 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createId } from "@paralleldrive/cuid2";
-import argon2 from "argon2";
-import { eq } from "drizzle-orm";
 
 import { executeHumanLogin } from "../../../../src/application/account/commands/loginCommands.js";
 import { executeLogout } from "../../../../src/application/account/commands/logoutCommands.js";
 import { executeRefreshToken } from "../../../../src/application/account/commands/refreshCommands.js";
 import { loadConfig } from "../../../../src/config.js";
 import { createDb, runMigrations, type DbHandle } from "../../../../src/db/index.js";
+import { eq } from "drizzle-orm";
 import { accounts } from "../../../../src/db/schema.runtime.js";
 import { AUTH_ERROR_CODES, AuthError } from "../../../../src/domain/account/errors.js";
 import type { AppDeps } from "../../../../src/application/deps.js";
+import { insertAccount, TEST_PASSWORD } from "../../../helpers/sellerTestHelpers.js";
 
-const TEST_PASSWORD = "test-password-123";
+const TEST_PASSWORD_LOCAL = TEST_PASSWORD;
 
 type TestContext = {
   deps: AppDeps;
@@ -31,38 +31,12 @@ async function createTestContext(): Promise<TestContext> {
   return { deps: { db: handle.db, config }, handle };
 }
 
-async function insertAccount(
-  deps: AppDeps,
-  overrides: Partial<typeof accounts.$inferInsert> = {},
-): Promise<{ id: string; email: string }> {
-  const id = createId();
-  const email = overrides.email ?? `user-${id}@example.com`;
-  const passwordHash = overrides.passwordHash ?? (await argon2.hash(TEST_PASSWORD));
-  const now = new Date();
-
-  await deps.db.insert(accounts).values({
-    id,
-    email,
-    passwordHash,
-    role: "seller",
-    status: "active",
-    refreshToken: null,
-    refreshTokenLookup: null,
-    createdAt: now,
-    updatedAt: now,
-    deletedAt: null,
-    ...overrides,
-  });
-
-  return { id, email };
-}
-
 test("executeHumanLogin returns tokens and persists refresh state", async () => {
   const { deps, handle } = await createTestContext();
   try {
     const { id, email } = await insertAccount(deps);
 
-    const result = await executeHumanLogin(deps, { email, password: TEST_PASSWORD });
+    const result = await executeHumanLogin(deps, { email, password: TEST_PASSWORD_LOCAL });
 
     assert.equal(result.tokenType, "Bearer");
     assert.ok(result.accessToken.length > 0);
@@ -83,8 +57,8 @@ test("second login overwrites previous refresh token (single session)", async ()
   try {
     const { email } = await insertAccount(deps);
 
-    const first = await executeHumanLogin(deps, { email, password: TEST_PASSWORD });
-    const second = await executeHumanLogin(deps, { email, password: TEST_PASSWORD });
+    const first = await executeHumanLogin(deps, { email, password: TEST_PASSWORD_LOCAL });
+    const second = await executeHumanLogin(deps, { email, password: TEST_PASSWORD_LOCAL });
 
     assert.notEqual(first.refreshToken, second.refreshToken);
 
@@ -108,7 +82,7 @@ test("executeRefreshToken rotates token and rejects old refresh token", async ()
   const { deps, handle } = await createTestContext();
   try {
     const { email } = await insertAccount(deps);
-    const login = await executeHumanLogin(deps, { email, password: TEST_PASSWORD });
+    const login = await executeHumanLogin(deps, { email, password: TEST_PASSWORD_LOCAL });
 
     const refreshed = await executeRefreshToken(deps, { refreshToken: login.refreshToken });
     assert.notEqual(refreshed.refreshToken, login.refreshToken);
@@ -126,7 +100,7 @@ test("executeLogout nullifies refresh token and blocks subsequent refresh", asyn
   const { deps, handle } = await createTestContext();
   try {
     const { id, email } = await insertAccount(deps);
-    const login = await executeHumanLogin(deps, { email, password: TEST_PASSWORD });
+    const login = await executeHumanLogin(deps, { email, password: TEST_PASSWORD_LOCAL });
 
     await executeLogout(deps, id);
 
@@ -153,7 +127,7 @@ test("executeHumanLogin rejects inactive account", async () => {
     const { email } = await insertAccount(deps, { status: "inactive" });
 
     await assert.rejects(
-      () => executeHumanLogin(deps, { email, password: TEST_PASSWORD }),
+      () => executeHumanLogin(deps, { email, password: TEST_PASSWORD_LOCAL }),
       (e: unknown) => {
         assert.ok(e instanceof AuthError);
         assert.equal(e.code, AUTH_ERROR_CODES.ACCOUNT_INACTIVE);
@@ -171,7 +145,7 @@ test("executeHumanLogin rejects soft-deleted account", async () => {
     const { email } = await insertAccount(deps, { deletedAt: new Date() });
 
     await assert.rejects(
-      () => executeHumanLogin(deps, { email, password: TEST_PASSWORD }),
+      () => executeHumanLogin(deps, { email, password: TEST_PASSWORD_LOCAL }),
       (e: unknown) => {
         assert.ok(e instanceof AuthError);
         assert.equal(e.code, AUTH_ERROR_CODES.ACCOUNT_DELETED);
@@ -208,7 +182,7 @@ test("executeHumanLogin rejects unknown email", async () => {
       () =>
         executeHumanLogin(deps, {
           email: "missing@example.com",
-          password: TEST_PASSWORD,
+          password: TEST_PASSWORD_LOCAL,
         }),
       (e: unknown) => {
         assert.ok(e instanceof AuthError);
@@ -225,7 +199,7 @@ test("executeRefreshToken rejects inactive account", async () => {
   const { deps, handle } = await createTestContext();
   try {
     const { id, email } = await insertAccount(deps);
-    const login = await executeHumanLogin(deps, { email, password: TEST_PASSWORD });
+    const login = await executeHumanLogin(deps, { email, password: TEST_PASSWORD_LOCAL });
 
     await deps.db
       .update(accounts)

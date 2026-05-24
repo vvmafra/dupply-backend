@@ -2,20 +2,17 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { createId } from "@paralleldrive/cuid2";
-import argon2 from "argon2";
 import Fastify from "fastify";
 import * as jose from "jose";
+import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 
 import { loadConfig } from "../../../src/config.js";
 import { createDb, runMigrations, type DbHandle } from "../../../src/db/index.js";
-import { accounts } from "../../../src/db/schema.runtime.js";
-import { mockProfileId } from "../../../src/domain/account/profileId.js";
 import { requireJwt } from "../../../src/plugins/jwt-auth.js";
 import { registerAccountRoutes } from "../../../src/routes/v1/accounts.js";
 import { registerAuthRoutes } from "../../../src/routes/v1/auth.js";
 import type { AppDeps } from "../../../src/application/deps.js";
-
-const TEST_PASSWORD = "test-password-123";
+import { insertAccount, TEST_PASSWORD } from "../../helpers/sellerTestHelpers.js";
 
 type TestApp = {
   app: ReturnType<typeof Fastify>;
@@ -33,6 +30,8 @@ async function createTestApp(): Promise<TestApp> {
   const deps: AppDeps = { db: handle.db, config };
 
   const app = Fastify({ logger: false });
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
 
   await app.register(async (scope) => {
     await registerAuthRoutes(scope, deps);
@@ -47,36 +46,11 @@ async function createTestApp(): Promise<TestApp> {
   return { app, deps, handle };
 }
 
-async function insertAccount(
-  deps: AppDeps,
-  overrides: Partial<typeof accounts.$inferInsert> = {},
-): Promise<{ id: string; email: string }> {
-  const id = createId();
-  const email = overrides.email ?? `user-${id}@example.com`;
-  const passwordHash = overrides.passwordHash ?? (await argon2.hash(TEST_PASSWORD));
-  const now = new Date();
-
-  await deps.db.insert(accounts).values({
-    id,
-    email,
-    passwordHash,
-    role: "seller",
-    status: "active",
-    refreshToken: null,
-    refreshTokenLookup: null,
-    createdAt: now,
-    updatedAt: now,
-    deletedAt: null,
-    ...overrides,
-  });
-
-  return { id, email };
-}
-
 test("login → refresh → GET account → logout flow with profileId in JWT", async () => {
   const { app, deps, handle } = await createTestApp();
   try {
-    const { id, email } = await insertAccount(deps);
+    const { id, email, sellerId } = await insertAccount(deps);
+    assert.ok(sellerId);
 
     const loginRes = await app.inject({
       method: "POST",
@@ -103,7 +77,7 @@ test("login → refresh → GET account → logout flow with profileId in JWT", 
     });
     assert.equal(payload.sub, id);
     assert.equal(payload.role, "seller");
-    assert.equal(payload.profileId, mockProfileId(id, "seller"));
+    assert.equal(payload.profileId, sellerId);
     assert.equal(payload.principalKind, undefined);
 
     const refreshRes = await app.inject({
@@ -152,6 +126,51 @@ test("login → refresh → GET account → logout flow with profileId in JWT", 
     });
     assert.equal(refreshAfterLogout.statusCode, 401);
     assert.deepEqual(refreshAfterLogout.json(), { error: "invalid_refresh_token" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/auth/register creates seller and returns tokens", async () => {
+  const { app, handle } = await createTestApp();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/auth/register",
+      payload: {
+        email: "register-test@example.com",
+        password: TEST_PASSWORD,
+        name: "Empresa Registrada",
+        role: "seller",
+      },
+    });
+    assert.equal(res.statusCode, 201);
+    const body = res.json() as { accessToken: string; refreshToken: string; sellerId: string };
+    assert.ok(body.accessToken);
+    assert.ok(body.refreshToken);
+    assert.ok(body.sellerId);
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/auth/register rejects duplicate email", async () => {
+  const { app, handle } = await createTestApp();
+  try {
+    const payload = {
+      email: "dup-register@example.com",
+      password: TEST_PASSWORD,
+      name: "Empresa",
+      role: "seller" as const,
+    };
+    const first = await app.inject({ method: "POST", url: "/v1/auth/register", payload });
+    assert.equal(first.statusCode, 201);
+
+    const second = await app.inject({ method: "POST", url: "/v1/auth/register", payload });
+    assert.equal(second.statusCode, 409);
+    assert.deepEqual(second.json(), { error: "email_already_exists" });
   } finally {
     await app.close();
     await handle.close();

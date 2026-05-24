@@ -90,6 +90,36 @@ export const rampOrders = sqliteTable(
   ],
 );
 
+export const SELLER_STATUSES = ["created", "in_review", "active", "inactive"] as const;
+
+export const sellers = sqliteTable(
+  "sellers",
+  {
+    id: text("id").primaryKey(),
+    status: text("status").notNull().default("created"),
+    name: text("name").notNull(),
+    companyMetaData: text("company_meta_data").notNull(),
+    legalRepresentativeMetaData: text("legal_representative_meta_data").notNull(),
+    businessRelationsMetaData: text("business_relations_meta_data").notNull(),
+    accountId: text("account_id")
+      .notNull()
+      .unique()
+      .references(() => accounts.id),
+    walletId: text("wallet_id"),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull().defaultNow(),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().defaultNow(),
+    deletedAt: integer("deleted_at", { mode: "timestamp" }),
+  },
+  (t) => [
+    check(
+      "sellers_status_check",
+      sql`${t.status} IN ('created', 'in_review', 'active', 'inactive')`,
+    ),
+    index("sellers_status_idx").on(t.status),
+    index("sellers_account_id_idx").on(t.accountId),
+  ],
+);
+
 export const tradeBillDrafts = sqliteTable("trade_bill_drafts", {
   id: text("id").primaryKey(),
   issuerPublicKey: text("issuer_public_key").notNull(),

@@ -3,8 +3,8 @@ import argon2 from "argon2";
 import type { AppDeps } from "../../deps.js";
 import { AUTH_ERROR_CODES, AuthError } from "../../../domain/account/errors.js";
 import { assertCanAuthenticate, requireLoginCandidate } from "../../../domain/account/policies.js";
-import { mockProfileId } from "../../../domain/account/profileId.js";
 import type { AccountAuthSnapshot } from "../../../domain/account/types.js";
+import { resolveProfileId } from "../../../domain/account/profileId.js";
 import { signAccessToken } from "../../../lib/jwt.js";
 import { issueRefreshToken } from "../../../lib/refreshToken.js";
 import { findAccountByEmail, persistRefreshToken } from "./accountAuthDb.js";
@@ -27,10 +27,11 @@ export async function buildLoginResult(
   account: AccountAuthSnapshot,
   plainRefreshToken: string,
 ): Promise<LoginResult> {
+  const profileId = await resolveProfileId(deps, account.id, account.role);
   const accessToken = await signAccessToken(deps.config, {
     sub: account.id,
     role: account.role,
-    profileId: mockProfileId(account.id, account.role),
+    profileId,
   });
 
   return {

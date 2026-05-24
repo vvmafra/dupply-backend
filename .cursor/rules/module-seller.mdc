@@ -8,6 +8,8 @@ alwaysApply: false
 
 O **cedente** é a empresa que detém duplicatas a receber e deseja antecipá-las via Dupply. Cada seller está vinculado a exatamente um `account` (role=seller) e a exatamente uma `wallet`.
 
+> **Autenticação:** o login do seller ocorre exclusivamente pelo `account` vinculado, seguindo o mesmo fluxo de todas as roles da plataforma. Não existe autenticação direta no seller.
+
 ---
 
 ## Schema
@@ -15,8 +17,8 @@ O **cedente** é a empresa que detém duplicatas a receber e deseja antecipá-la
 ```typescript
 export const sellers = pgTable("sellers", {
   id:                         text("id").primaryKey(),                    // cuid2
-  status:                     text("status").notNull().default("pending_review"),
-  name:                       text("name").notNull(),                     // razão social ou nome fantasia
+  status:                     text("status").notNull().default("created"),
+  name:                       text("name").notNull(),                     // nome fantasia / nome de exibição (definido pelo usuário)
   companyMetaData:            text("company_meta_data").notNull(),        // JSON — dados da empresa
   legalRepresentativeMetaData: text("legal_representative_meta_data").notNull(), // JSON — representante legal
   businessRelationsMetaData:  text("business_relations_meta_data").notNull(), // JSON — clientes e fornecedores
@@ -35,31 +37,34 @@ export const sellers = pgTable("sellers", {
 ### `companyMetaData`
 ```typescript
 type CompanyMetaData = {
-  legalName: string;       // razão social
-  tradeName?: string;      // nome fantasia
-  cnpj: string;
+  legalName: string;            // razão social
+  cnpj: string;                 // somente dígitos, 14 chars
+  foundingDate: string;         // data de fundação — formato ISO 8601 (YYYY-MM-DD)
+  shareCapital: number;         // capital social em centavos (BRL)
+  annualRevenue: number;        // faturamento real dos últimos 12 meses em centavos (BRL)
+  corporateEmail: string;       // email corporativo
+  phone: string;                // telefone da empresa
+  businessDescription: string;  // descrição da atividade
   address: {
-    street: string;
-    number: string;
-    complement?: string;
-    neighborhood: string;
-    city: string;
-    state: string;         // UF 2 chars
-    zipCode: string;
+    zipCode: string;            // CEP — somente dígitos, 8 chars
+    state: string;              // UF — 2 chars
+    street: string;             // logradouro
+    number: string;             // número
+    complement?: string;        // complemento
+    neighborhood: string;       // bairro
+    city: string;               // cidade
   };
-  phone?: string;
-  website?: string;
 };
 ```
 
 ### `legalRepresentativeMetaData`
 ```typescript
 type LegalRepresentativeMetaData = {
-  fullName: string;
-  cpf: string;
+  fullName: string;   // nome completo
+  cpf: string;        // somente dígitos, 11 chars
   email: string;
-  phone?: string;
-  role?: string;           // cargo/função
+  phone: string;
+  role: string;       // cargo/função na empresa
 };
 ```
 
@@ -84,15 +89,19 @@ type BusinessRelationsMetaData = {
 ## Status machine do seller
 
 ```
-pending_review  →  active     (aprovado pelo risk_analyst / admin)
-pending_review  →  rejected   (reprovado pelo risk_analyst / admin)
-active          →  inactive   (desativado por admin)
-inactive        →  active     (reativado por admin)
+created    →  in_review  (seller concluiu todas as etapas e enviou para análise)
+in_review  →  active     (aprovado pelo risk_analyst / admin)
+in_review  →  inactive   (recusado pelo risk_analyst / admin)
+active     →  inactive   (desativado por admin)
 ```
 
-- Seller recém-criado começa em `pending_review` — aguarda aprovação da plataforma antes de poder submeter receivables.
-- Seller em `rejected` não pode submeter receivables.
+- `created` — estado inicial; seller em preenchimento do cadastro multi-etapas (Acesso → Empresa → Representante → Clientes e fornecedores → Documentos). Pode editar todos os metadados livremente.
+- `in_review` — seller concluiu todas as etapas e clicou em "Enviar"; aguarda revisão do analista de risco. Edição bloqueada.
+- `active` — aprovado; pode submeter receivables.
+- `inactive` — recusado na revisão ou desativado pelo admin; não pode submeter receivables. Status terminal (sem reativação).
 - Seller com `deletedAt IS NOT NULL` é removido logicamente; nenhum receivable futuro pode ser criado.
+
+> **Fluxo de cadastro:** o registro segue 5 etapas guiadas no front-end. A transição para `in_review` só é acionada após o preenchimento completo de todos os campos obrigatórios (incluindo documentos) e confirmação explícita do seller. O analista de risco visualiza apenas sellers com status `in_review`.
 
 ---
 
@@ -102,6 +111,10 @@ inactive        →  active     (reativado por admin)
 - 1:1 com `wallet` — `walletId` pode ser null imediatamente após criação do seller (wallet é criada em passo subsequente, pode ser na mesma transação ou em fluxo guiado).
 - `businessRelationsMetaData` é validado no layer de aplicação: mínimo 1 cliente e 1 fornecedor; máximo 5 de cada.
 - Seller só pode criar `receivable` se `status = 'active'`.
+- Seller em `created`, `in_review` ou `inactive` não pode submeter receivables.
+- Edição de metadados (`companyMetaData`, `legalRepresentativeMetaData`, `businessRelationsMetaData`) é permitida apenas enquanto `status = 'created'`.
+- Valores monetários (`shareCapital`, `annualRevenue`) são sempre armazenados como **inteiros em centavos (BRL)**. Ver `money.mdc` para a convenção e utilitário de conversão.
+- Campos de telefone aceitam apenas dígitos (DDD + número, sem formatação), ex: `41999449944`.
 - Criação de seller ocorre na mesma transação de criação do `account` (ver `module-account.mdc`).
 
 ---

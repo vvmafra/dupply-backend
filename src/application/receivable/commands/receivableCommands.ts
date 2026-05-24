@@ -2,13 +2,15 @@ import { randomUUID } from "node:crypto";
 import { and, eq, isNull } from "drizzle-orm";
 
 import type { AppDeps } from "../../deps.js";
-import { accounts, receivables } from "../../../db/schema.runtime.js";
+import { accounts, receivables, sellers } from "../../../db/schema.runtime.js";
 import {
   assertReceivableTransition,
   PLATFORM_ROLES,
   RECEIVABLE_STATUS,
   type ReceivableStatus,
 } from "../../../domain/receivable/transitions.js";
+import { assertSellerCanCreateReceivable } from "../../../domain/seller/policies.js";
+import type { SellerStatus } from "../../../domain/seller/types.js";
 
 function nowMs(): string {
   return String(Date.now());
@@ -29,20 +31,26 @@ export async function executeCreateReceivable(
   if (input.sellerUserId === input.payerUserId) {
     throw new Error("seller_and_payer_must_differ");
   }
-  const [seller] = await db
+  const [row] = await db
     .select()
-    .from(accounts)
+    .from(sellers)
+    .innerJoin(accounts, eq(sellers.accountId, accounts.id))
     .where(
       and(
         eq(accounts.id, input.sellerUserId),
         eq(accounts.role, PLATFORM_ROLES.SELLER),
         isNull(accounts.deletedAt),
+        isNull(sellers.deletedAt),
       ),
     )
     .limit(1);
-  if (!seller) {
+  if (!row) {
     throw new Error("invalid_seller");
   }
+  assertSellerCanCreateReceivable({
+    status: row.sellers.status as SellerStatus,
+    deletedAt: row.sellers.deletedAt,
+  });
   // Payer entity not yet implemented — accept opaque payerUserId until Module 4/5.
   const id = randomUUID();
   const t = nowMs();

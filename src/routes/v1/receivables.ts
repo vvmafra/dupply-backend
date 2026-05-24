@@ -1,4 +1,5 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
+import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { eq } from "drizzle-orm";
 import { z } from "zod";
 
@@ -11,6 +12,8 @@ import {
 import { PLATFORM_ROLES, type PlatformRole } from "../../domain/receivable/transitions.js";
 import { receivables } from "../../db/schema.runtime.js";
 import { ReceivableTransitionError } from "../../domain/receivable/transitions.js";
+import { SellerError, SELLER_ERROR_CODES } from "../../domain/seller/errors.js";
+import { requireRoles } from "../../plugins/require-roles.js";
 
 const createBodySchema = z.object({
   payerUserId: z.string().uuid(),
@@ -23,13 +26,7 @@ const riskDecisionBodySchema = z.object({
   proposedValue: z.string().min(1).optional(),
 });
 
-function requireAuth(request: FastifyRequest, reply: FastifyReply): request is FastifyRequest & { auth: NonNullable<FastifyRequest["auth"]> } {
-  if (!request.auth) {
-    reply.code(401).send({ error: "unauthorized" });
-    return false;
-  }
-  return true;
-}
+const idParamsSchema = z.object({ id: z.string().min(1) });
 
 function isStaffRole(role: string): boolean {
   return (
@@ -39,24 +36,18 @@ function isStaffRole(role: string): boolean {
   );
 }
 
-function platformRole(auth: NonNullable<FastifyRequest["auth"]>): PlatformRole {
+function platformRole(auth: { role: string }): PlatformRole {
   return auth.role as PlatformRole;
 }
 
 function canViewReceivable(
-  auth: NonNullable<FastifyRequest["auth"]>,
+  auth: { sub: string; role: string },
   row: { sellerUserId: string; payerUserId: string },
 ): boolean {
   const role = platformRole(auth);
-  if (role === PLATFORM_ROLES.SELLER && row.sellerUserId === auth.sub) {
-    return true;
-  }
-  if (role === PLATFORM_ROLES.PAYER && row.payerUserId === auth.sub) {
-    return true;
-  }
-  if (isStaffRole(role)) {
-    return true;
-  }
+  if (role === PLATFORM_ROLES.SELLER && row.sellerUserId === auth.sub) return true;
+  if (role === PLATFORM_ROLES.PAYER && row.payerUserId === auth.sub) return true;
+  if (isStaffRole(role)) return true;
   return false;
 }
 
@@ -65,11 +56,19 @@ export async function registerReceivableRoutes(
   deps: AppDeps,
 ): Promise<void> {
   const { db } = deps;
+  const api = app.withTypeProvider<ZodTypeProvider>();
 
-  app.get(
+  api.get(
     "/v1/receivables",
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!requireAuth(request, reply)) return;
+    {
+      schema: {
+        tags: ["Receivables"],
+        summary: "Listar recebíveis do usuário autenticado",
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    async (request, reply) => {
+      if (!request.auth) return reply.code(401).send({ error: "unauthorized" });
       const { auth } = request;
       const role = platformRole(auth);
       let rows;
@@ -86,85 +85,90 @@ export async function registerReceivableRoutes(
     },
   );
 
-  app.get(
+  api.get(
     "/v1/receivables/:id",
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!requireAuth(request, reply)) return;
-      const id = (request.params as { id: string }).id;
-      const [row] = await db.select().from(receivables).where(eq(receivables.id, id)).limit(1);
-      if (!row) {
-        return reply.code(404).send({ error: "not_found" });
-      }
-      if (!canViewReceivable(request.auth!, row)) {
+    {
+      schema: {
+        tags: ["Receivables"],
+        summary: "Buscar recebível por ID",
+        params: idParamsSchema,
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    async (request, reply) => {
+      if (!request.auth) return reply.code(401).send({ error: "unauthorized" });
+      const [row] = await db
+        .select()
+        .from(receivables)
+        .where(eq(receivables.id, request.params.id))
+        .limit(1);
+      if (!row) return reply.code(404).send({ error: "not_found" });
+      if (!canViewReceivable(request.auth, row)) {
         return reply.code(403).send({ error: "forbidden" });
       }
       return { receivable: row };
     },
   );
 
-  app.post(
+  api.post(
     "/v1/receivables",
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!requireAuth(request, reply)) return;
-      const { auth } = request;
-      if (auth.role !== PLATFORM_ROLES.SELLER) {
-        return reply.code(403).send({ error: "forbidden" });
-      }
-      const parsed = createBodySchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({ error: "validation_error", details: parsed.error.flatten() });
-      }
+    {
+      preHandler: requireRoles("seller"),
+      schema: {
+        tags: ["Receivables"],
+        summary: "Criar recebível (seller)",
+        body: createBodySchema,
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    async (request, reply) => {
+      const auth = request.auth!;
       try {
         const { id } = await executeCreateReceivable(deps, {
           sellerUserId: auth.sub,
-          payerUserId: parsed.data.payerUserId,
-          value: parsed.data.value,
-          receivableMd: parsed.data.receivableMd,
+          payerUserId: request.body.payerUserId,
+          value: request.body.value,
+          receivableMd: request.body.receivableMd,
         });
         return reply.code(201).send({ id });
       } catch (e) {
+        if (e instanceof SellerError && e.code === SELLER_ERROR_CODES.NOT_ACTIVE) {
+          return reply.code(403).send({ error: "seller_not_active" });
+        }
         const msg = e instanceof Error ? e.message : "error";
-        if (msg === "seller_and_payer_must_differ") {
-          return reply.code(400).send({ error: msg });
-        }
-        if (msg === "invalid_seller" || msg === "invalid_payer") {
-          return reply.code(400).send({ error: msg });
-        }
+        if (msg === "seller_and_payer_must_differ") return reply.code(400).send({ error: msg });
+        if (msg === "invalid_seller" || msg === "invalid_payer") return reply.code(400).send({ error: msg });
         throw e;
       }
     },
   );
 
-  app.post(
+  api.post(
     "/v1/receivables/:id/risk-decision",
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!requireAuth(request, reply)) return;
-      const { auth } = request;
-      const role = platformRole(auth);
-      if (role !== PLATFORM_ROLES.RISK_ANALYST && role !== PLATFORM_ROLES.RISK_ANALYST_AGENT) {
-        return reply.code(403).send({ error: "forbidden" });
-      }
-      const id = (request.params as { id: string }).id;
-      const parsed = riskDecisionBodySchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({ error: "validation_error", details: parsed.error.flatten() });
-      }
+    {
+      preHandler: requireRoles("risk_analyst", "risk_analyst_agent"),
+      schema: {
+        tags: ["Receivables"],
+        summary: "Decisão de risco (risk_analyst)",
+        params: idParamsSchema,
+        body: riskDecisionBodySchema,
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    async (request, reply) => {
+      const role = platformRole(request.auth!);
       try {
         await executeRiskDecision(deps, {
-          receivableId: id,
+          receivableId: request.params.id,
           actorRole: role,
-          decision: parsed.data.decision,
-          proposedValue: parsed.data.proposedValue,
+          decision: request.body.decision,
+          proposedValue: request.body.proposedValue,
         });
         return { ok: true };
       } catch (e) {
-        if (e instanceof ReceivableTransitionError) {
-          return reply.code(409).send({ error: e.message });
-        }
+        if (e instanceof ReceivableTransitionError) return reply.code(409).send({ error: e.message });
         const msg = e instanceof Error ? e.message : "error";
-        if (msg === "receivable_not_found") {
-          return reply.code(404).send({ error: msg });
-        }
+        if (msg === "receivable_not_found") return reply.code(404).send({ error: msg });
         if (msg === "invalid_status_for_risk_decision" || msg === "proposed_value_required_for_offer") {
           return reply.code(400).send({ error: msg });
         }
@@ -173,29 +177,27 @@ export async function registerReceivableRoutes(
     },
   );
 
-  app.post(
+  api.post(
     "/v1/receivables/:id/confirm",
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      if (!requireAuth(request, reply)) return;
-      const { auth } = request;
-      if (platformRole(auth) !== PLATFORM_ROLES.PAYER) {
-        return reply.code(403).send({ error: "forbidden" });
-      }
-      const id = (request.params as { id: string }).id;
+    {
+      preHandler: requireRoles("payer"),
+      schema: {
+        tags: ["Receivables"],
+        summary: "Confirmar recebível (payer)",
+        params: idParamsSchema,
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    async (request, reply) => {
+      const auth = request.auth!;
       try {
-        await executePayerConfirm(deps, { receivableId: id, payerUserId: auth.sub });
+        await executePayerConfirm(deps, { receivableId: request.params.id, payerUserId: auth.sub });
         return { ok: true };
       } catch (e) {
-        if (e instanceof ReceivableTransitionError) {
-          return reply.code(409).send({ error: e.message });
-        }
+        if (e instanceof ReceivableTransitionError) return reply.code(409).send({ error: e.message });
         const msg = e instanceof Error ? e.message : "error";
-        if (msg === "receivable_not_found") {
-          return reply.code(404).send({ error: msg });
-        }
-        if (msg === "payer_mismatch") {
-          return reply.code(403).send({ error: msg });
-        }
+        if (msg === "receivable_not_found") return reply.code(404).send({ error: msg });
+        if (msg === "payer_mismatch") return reply.code(403).send({ error: msg });
         throw e;
       }
     },

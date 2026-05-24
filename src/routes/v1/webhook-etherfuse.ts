@@ -1,4 +1,5 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
+import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { eq } from "drizzle-orm";
 
 import type { AppConfig } from "../../config.js";
@@ -30,10 +31,16 @@ export async function registerEtherfuseWebhook(
   deps: { db: Db; config: AppConfig },
 ): Promise<void> {
   const { db, config } = deps;
+  const api = app.withTypeProvider<ZodTypeProvider>();
 
-  app.post(
+  api.post(
     "/v1/webhooks/etherfuse",
-    async (request: FastifyRequest, reply: FastifyReply) => {
+    {
+      schema: {
+        hide: true,
+      },
+    },
+    async (request, reply) => {
       const secret = config.ETHERFUSE_WEBHOOK_SECRET;
       if (!secret) {
         return reply.code(503).send({ error: "ETHERFUSE_WEBHOOK_SECRET not configured" });

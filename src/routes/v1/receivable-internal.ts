@@ -1,4 +1,5 @@
-import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
+import type { FastifyInstance } from "fastify";
+import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 
 import type { AppDeps } from "../../application/deps.js";
@@ -9,6 +10,8 @@ const advanceBodySchema = z.object({
   targetStatus: z.enum([RECEIVABLE_STATUS.PROCESSING, RECEIVABLE_STATUS.COMPLETED]),
 });
 
+const idParamsSchema = z.object({ id: z.string().min(1) });
+
 /**
  * Settlement advances (`processing`, `completed`) — **Dupply API key only** (workers / BFF).
  * Replace with an internal job queue when moving off synchronous triggers.
@@ -17,18 +20,24 @@ export async function registerReceivableInternalRoutes(
   app: FastifyInstance,
   deps: AppDeps,
 ): Promise<void> {
-  app.post(
+  const api = app.withTypeProvider<ZodTypeProvider>();
+
+  api.post(
     "/v1/internal/receivables/:id/advance-settlement",
-    async (request: FastifyRequest, reply: FastifyReply) => {
-      const id = (request.params as { id: string }).id;
-      const parsed = advanceBodySchema.safeParse(request.body);
-      if (!parsed.success) {
-        return reply.code(400).send({ error: "validation_error", details: parsed.error.flatten() });
-      }
+    {
+      schema: {
+        tags: ["Internal"],
+        summary: "Avançar settlement de recebível (worker)",
+        params: idParamsSchema,
+        body: advanceBodySchema,
+        security: [{ dupplyApiKey: [] }],
+      },
+    },
+    async (request, reply) => {
       try {
         await executeSystemAdvanceSettlement(deps, {
-          receivableId: id,
-          targetStatus: parsed.data.targetStatus,
+          receivableId: request.params.id,
+          targetStatus: request.body.targetStatus,
         });
         return { ok: true };
       } catch (e) {
@@ -36,9 +45,7 @@ export async function registerReceivableInternalRoutes(
           return reply.code(409).send({ error: e.message });
         }
         const msg = e instanceof Error ? e.message : "error";
-        if (msg === "receivable_not_found") {
-          return reply.code(404).send({ error: msg });
-        }
+        if (msg === "receivable_not_found") return reply.code(404).send({ error: msg });
         throw e;
       }
     },

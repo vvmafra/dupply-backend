@@ -104,6 +104,36 @@ export const tradeBillDrafts = pgTable("trade_bill_drafts", {
   updatedAtMs: text("updated_at_ms").notNull(),
 });
 
+export const SELLER_STATUSES = ["created", "in_review", "active", "inactive"] as const;
+
+export const sellers = pgTable(
+  "sellers",
+  {
+    id: text("id").primaryKey(),
+    status: text("status").notNull().default("created"),
+    name: text("name").notNull(),
+    companyMetaData: text("company_meta_data").notNull(),
+    legalRepresentativeMetaData: text("legal_representative_meta_data").notNull(),
+    businessRelationsMetaData: text("business_relations_meta_data").notNull(),
+    accountId: text("account_id")
+      .notNull()
+      .unique()
+      .references(() => accounts.id),
+    walletId: text("wallet_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    check(
+      "sellers_status_check",
+      sql`${t.status} IN ('created', 'in_review', 'active', 'inactive')`,
+    ),
+    index("sellers_status_idx").on(t.status),
+    index("sellers_account_id_idx").on(t.accountId),
+  ],
+);
+
 export const tradeBillChainRecords = pgTable(
   "trade_bill_chain_records",
   {

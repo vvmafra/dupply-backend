@@ -25,7 +25,9 @@ cp .env.example .env
 # Optional: JWT_ACCESS_TTL_SECONDS, JWT_REFRESH_TTL_SECONDS, JWT_ISSUER, ETHERFUSE_* , DUPPLY_REGISTRY_CONTRACT_ID , SOROBAN_RPC_URL , STELLAR_NETWORK
 ```
 
-Access token claims: `sub` (account id), `role`, `profileId`. Until seller / risk_analyst / admin profile modules land, `profileId` is a mocked placeholder (`placeholder-{role}-{accountId}`).
+Access token claims: `sub` (account id), `role`, `profileId`. For **seller** accounts, `profileId` is the real `seller.id`. For `admin` and `risk_analyst`, `profileId` remains a mocked placeholder until their profile modules land.
+
+**Money convention:** monetary fields in seller metadata (`shareCapital`, `annualRevenue`) are sent and returned by the API in **reais with 2 decimal places** (e.g. `150000.00`). They are stored internally as integer **cents** (e.g. `15000000`).
 
 ## Commands
 
@@ -37,7 +39,8 @@ npm run dev
 ### Routes
 
 - `GET /health` — no authentication.
-- **Auth** (no Bearer on login/refresh; logout requires Bearer):
+- **Auth** (no Bearer on login/refresh/register; logout requires Bearer):
+  - `POST /v1/auth/register` — `{ "email", "password", "name", "role": "seller" }`; creates account + seller atomically; returns `201` with login token shape plus `{ sellerId }`. Only `role: "seller"` is accepted in v1.
   - `POST /v1/auth/login` — `{ "email", "password" }`; returns `{ accessToken, refreshToken, tokenType, expiresInSeconds, refreshExpiresInSeconds }`.
   - `POST /v1/auth/refresh` — `{ "refreshToken" }`; same response shape as login (refresh token rotated).
   - `POST /v1/auth/logout` — Bearer JWT; invalidates stored refresh token (`204`).
@@ -45,10 +48,17 @@ npm run dev
   - `GET /v1/accounts/:id` — account profile (owner or admin; excludes password hash and refresh token).
   - `PATCH /v1/accounts/:id` — `{ "password" }`; owner or admin (`204`).
   - `DELETE /v1/accounts/:id` — admin soft-delete (`204`).
+- **Sellers** (`Authorization: Bearer <accessToken>`):
+  - `GET /v1/sellers` — admin lists all sellers; risk_analyst lists `in_review` only; optional `?status=` filter (admin).
+  - `GET /v1/sellers/:id` — seller (own), admin (any), risk_analyst (`in_review` only).
+  - `PATCH /v1/sellers/:id` — seller (own); partial metadata update while `status=created`; money fields in reais.
+  - `POST /v1/sellers/:id/submit` — seller (own); validates completeness and transitions to `in_review` (`204`).
+  - `PATCH /v1/sellers/:id/status` — admin; body `{ "status": "active" | "inactive" }` (`204`).
+  - `DELETE /v1/sellers/:id` — admin soft-delete (`204`).
 - **Receivables** (`Authorization: Bearer <accessToken>`):
   - `GET /v1/receivables` — list (seller: own; payer: own; admin / risk / risk_analyst_agent: up to 200 rows).
   - `GET /v1/receivables/:id` — detail if caller may view.
-  - `POST /v1/receivables` — **seller**; body `{ "payerUserId" (UUID), "value", "receivableMd"? }`; validates seller against `accounts` (`role=seller`, not soft-deleted); `payerUserId` is accepted without DB lookup until the payer module lands; creates row with `status=under_review`.
+  - `POST /v1/receivables` — **seller**; body `{ "payerUserId" (UUID), "value", "receivableMd"? }`; validates seller exists with `status=active` and not soft-deleted; `payerUserId` is accepted without DB lookup until the payer module lands; creates row with `status=under_review`.
   - `POST /v1/receivables/:id/risk-decision` — **risk_analyst** or **risk_analyst_agent**; body `{ "decision": "offer" | "reject", "proposedValue"? }` (`proposedValue` required when `decision` is `offer`).
   - `POST /v1/receivables/:id/confirm` — **payer** bound to `payer_user_id`; moves `offer` → `confirmed`.
 - **Internal settlement** (`X-Dupply-Api-Key` only — workers / BFF; not for end users):  

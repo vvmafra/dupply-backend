@@ -1,0 +1,143 @@
+---
+description: Como criar e documentar rotas HTTP no dupply-backend (Fastify + Zod + Swagger)
+globs: src/routes/**/*,src/plugins/swagger.ts
+alwaysApply: false
+---
+
+# Rotas HTTP — padrão obrigatório
+
+Stack: **Fastify 5 + `fastify-type-provider-zod` + `@fastify/swagger`**.
+
+A UI do Swagger fica em `/docs`. O spec OpenAPI fica em `/docs/json`.
+
+---
+
+## Template de rota (copiar para novas rotas)
+
+```typescript
+import type { FastifyInstance } from "fastify";
+import type { ZodTypeProvider } from "fastify-type-provider-zod";
+import { z } from "zod";
+
+// Schemas definidos FORA da função (reusáveis, visíveis no Swagger)
+const createBodySchema = z.object({
+  name: z.string().min(1),
+});
+
+const idParamsSchema = z.object({ id: z.string().min(1) });
+
+export async function registerXxxRoutes(app: FastifyInstance, deps: AppDeps) {
+  const api = app.withTypeProvider<ZodTypeProvider>();  // <-- obrigatório
+
+  api.post("/v1/xxx", {
+    preHandler: requireRoles("admin"), // rotas com restrição de role pura
+    schema: {
+      tags: ["Tag"],            // tag do grupo no Swagger
+      summary: "Descrição",    // resumo exibido no Swagger
+      body: createBodySchema,
+      params: idParamsSchema,  // se tiver params
+      // querystring: querySchema,
+      security: [{ bearerAuth: [] }],  // ver seção de segurança abaixo
+    },
+  }, async (request, reply) => {
+    // Rotas com requireRoles: request.auth é garantido pelo guard (sem check inline)
+    // Rotas ownership-based: if (!request.auth) return reply.code(401).send({ error: "unauthorized" });
+    // request.body, request.params, request.query são totalmente tipados
+    // NÃO usar safeParse() aqui — validação já ocorreu no schema
+    return reply.code(201).send({ id: "..." });
+  });
+}
+```
+
+---
+
+## Regras obrigatórias
+
+1. **Sempre chamar `app.withTypeProvider<ZodTypeProvider>()`** no início da função de registro e usar `api.*` nos handlers.
+2. **Schemas Zod no campo `schema:`** — nunca `safeParse()` manual no handler.
+   - `body:` para POST/PATCH/PUT
+   - `params:` quando houver `:param` na URL
+   - `querystring:` para query params
+3. **`security:` obrigatório** em todas as rotas — ver tabela abaixo.
+4. **`tags:` e `summary:` obrigatórios** — usados no Swagger para organização.
+5. **Auth por tipo de rota:**
+   - **Ownership/resource-based** (sem allow-list de role): manter `if (!request.auth) return reply.code(401).send({ error: "unauthorized" })` inline no handler e delegar checagens finas à domain policy.
+   - **Role-restricted** (allow-list pura): usar `preHandler: requireRoles(...)` na rota; **não** repetir `if (!request.auth)` no handler.
+
+---
+
+## Segurança por contexto
+
+| Contexto de auth | `security:` no schema |
+|---|---|
+| Rotas públicas (`/v1/auth/*`) | `security: []` |
+| JWT (accounts, sellers, receivables) | `security: [{ bearerAuth: [] }]` |
+| API Key (ramp, trade-bills, internal) | `security: [{ dupplyApiKey: [] }]` |
+| Webhook (lógica customizada) | `schema: { hide: true }` |
+
+Os security schemes estão definidos em `src/plugins/swagger.ts`.
+
+---
+
+## Restrição de role
+
+| Tipo de restrição | Mecanismo |
+|---|---|
+| Uma ou várias roles (sem lógica de ownership) | `preHandler: requireRoles("role1", "role2")` |
+| Ownership ou resource-based (role + identidade) | `if (!request.auth)` inline + domain policy |
+
+Import: `requireRoles` de `src/plugins/require-roles.ts`.
+
+---
+
+## Erros de validação
+
+Validação de schema falha → Fastify retorna `400` automaticamente.
+
+Erros de negócio (domain/application) → handler captura e mapeia manualmente:
+```typescript
+try {
+  // ...
+} catch (e) {
+  const mapped = mapXxxError(e, reply);
+  if (mapped) return mapped;
+  throw e;
+}
+```
+
+---
+
+## Configuração global (apenas em `server.ts` e testes de rota)
+
+Em `server.ts` e nos `createTestApp()` dos testes:
+```typescript
+app.setValidatorCompiler(validatorCompiler);   // de fastify-type-provider-zod
+app.setSerializerCompiler(serializerCompiler); // de fastify-type-provider-zod
+```
+
+**Testes de rota (`tests/routes/`)** devem ter esses dois calls no `createTestApp()`.
+
+---
+
+## Tags disponíveis
+
+| Tag | Módulo |
+|---|---|
+| `Auth` | `/v1/auth/*` |
+| `Accounts` | `/v1/accounts/*` |
+| `Sellers` | `/v1/sellers/*` |
+| `Receivables` | `/v1/receivables/*` |
+| `Ramp` | `/v1/ramp/*` |
+| `Trade Bills` | `/v1/trade-bills/*` |
+| `Internal` | `/v1/internal/*` |
+
+Novas tags devem ser adicionadas em `src/plugins/swagger.ts`.
+
+---
+
+## O que NÃO fazer
+
+- ❌ `const parsed = bodySchema.safeParse(request.body)` dentro do handler
+- ❌ `(request.params as { id: string }).id` — usar `params:` no schema
+- ❌ `app.post(url, async (request, reply) => { ... })` sem o `schema:` e sem `withTypeProvider`
+- ❌ `FastifyRequest` / `FastifyReply` como tipo explícito nos handlers de rotas migradas — deixar o TypeScript inferir

@@ -10,6 +10,7 @@ const url = process.env.DATABASE_URL ?? "file:./data/dupply.db";
 const mod = isPostgresDatabaseUrl(url) ? pg : sqlite;
 
 export const accounts = mod.accounts;
+export const sellers = mod.sellers;
 export const receivables = mod.receivables;
 export const rampQuotes = mod.rampQuotes;
 export const rampOrders = mod.rampOrders;

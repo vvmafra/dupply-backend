@@ -1,4 +1,10 @@
-export const ACCOUNT_ROLES = ["seller", "risk_analyst", "admin"] as const;
+export const ACCOUNT_ROLES = [
+  "seller",
+  "payer",
+  "risk_analyst",
+  "risk_analyst_agent",
+  "admin",
+] as const;
 export type AccountRole = (typeof ACCOUNT_ROLES)[number];
 
 export const ACCOUNT_STATUSES = ["active", "inactive"] as const;
