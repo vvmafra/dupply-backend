@@ -6,7 +6,7 @@ import {
   PLATFORM_ROLES,
   RECEIVABLE_STATUS,
   ReceivableTransitionError,
-} from "./transitions.js";
+} from "../../../src/domain/receivable/transitions.js";
 
 test("risk may offer from under_review", () => {
   assertReceivableTransition(RECEIVABLE_STATUS.UNDER_REVIEW, RECEIVABLE_STATUS.OFFER, {

@@ -1,27 +1,58 @@
 import type { FastifyInstance, FastifyReply, FastifyRequest } from "fastify";
-import { eq } from "drizzle-orm";
-import argon2 from "argon2";
 import { z } from "zod";
 
 import type { AppDeps } from "../../application/deps.js";
-import { platformUsers } from "../../db/schema.runtime.js";
-import { signAccessToken } from "../../lib/jwt.js";
+import { executeHumanLogin } from "../../application/account/commands/loginCommands.js";
+import { executeLogout } from "../../application/account/commands/logoutCommands.js";
+import { executeRefreshToken } from "../../application/account/commands/refreshCommands.js";
+import {
+  AUTH_ERROR_CODES,
+  AuthError,
+  type AuthErrorCode,
+} from "../../domain/account/errors.js";
+import { requireJwt } from "../../plugins/jwt-auth.js";
 
 const loginBodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
 });
 
-const serviceLoginBodySchema = z.object({
-  email: z.string().email(),
-  apiKey: z.string().min(1),
+const refreshBodySchema = z.object({
+  refreshToken: z.string().min(1),
 });
+
+const AUTH_ERROR_HTTP: Partial<Record<AuthErrorCode, number>> = {
+  [AUTH_ERROR_CODES.INVALID_CREDENTIALS]: 401,
+  [AUTH_ERROR_CODES.INVALID_REFRESH_TOKEN]: 401,
+  [AUTH_ERROR_CODES.REFRESH_TOKEN_EXPIRED]: 401,
+  [AUTH_ERROR_CODES.ACCOUNT_INACTIVE]: 403,
+  [AUTH_ERROR_CODES.ACCOUNT_DELETED]: 403,
+};
+
+function mapAuthError(e: unknown, reply: FastifyReply): FastifyReply | undefined {
+  if (e instanceof AuthError) {
+    const status = AUTH_ERROR_HTTP[e.code] ?? 401;
+    return reply.code(status).send({ error: e.code });
+  }
+  return undefined;
+}
+
+function requireAuth(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): request is FastifyRequest & { auth: NonNullable<FastifyRequest["auth"]> } {
+  if (!request.auth) {
+    reply.code(401).send({ error: "unauthorized" });
+    return false;
+  }
+  return true;
+}
 
 export async function registerAuthRoutes(
   app: FastifyInstance,
   deps: AppDeps,
 ): Promise<void> {
-  const { db, config } = deps;
+  const { config } = deps;
 
   app.post(
     "/v1/auth/login",
@@ -33,61 +64,49 @@ export async function registerAuthRoutes(
       if (!parsed.success) {
         return reply.code(400).send({ error: "validation_error", details: parsed.error.flatten() });
       }
-      const [user] = await db
-        .select()
-        .from(platformUsers)
-        .where(eq(platformUsers.email, parsed.data.email))
-        .limit(1);
-      if (!user || user.principalKind !== "human" || !user.passwordHash) {
-        return reply.code(401).send({ error: "invalid_credentials" });
+      try {
+        return await executeHumanLogin(deps, parsed.data);
+      } catch (e) {
+        const mapped = mapAuthError(e, reply);
+        if (mapped) return mapped;
+        throw e;
       }
-      const ok = await argon2.verify(user.passwordHash, parsed.data.password);
-      if (!ok) {
-        return reply.code(401).send({ error: "invalid_credentials" });
-      }
-      if (user.status !== "active") {
-        return reply.code(403).send({ error: "account_inactive" });
-      }
-      const token = await signAccessToken(config, {
-        sub: user.id,
-        role: user.role,
-        principalKind: user.principalKind,
-      });
-      return { accessToken: token, tokenType: "Bearer", expiresInSeconds: config.JWT_ACCESS_TTL_SECONDS };
     },
   );
 
   app.post(
-    "/v1/auth/service-login",
+    "/v1/auth/refresh",
     async (request: FastifyRequest, reply: FastifyReply) => {
       if (!config.JWT_SECRET) {
         return reply.code(503).send({ error: "JWT_SECRET not configured" });
       }
-      const parsed = serviceLoginBodySchema.safeParse(request.body);
+      const parsed = refreshBodySchema.safeParse(request.body);
       if (!parsed.success) {
         return reply.code(400).send({ error: "validation_error", details: parsed.error.flatten() });
       }
-      const [user] = await db
-        .select()
-        .from(platformUsers)
-        .where(eq(platformUsers.email, parsed.data.email))
-        .limit(1);
-      if (!user || user.principalKind !== "service" || !user.serviceApiKeyHash) {
-        return reply.code(401).send({ error: "invalid_credentials" });
+      try {
+        return await executeRefreshToken(deps, parsed.data);
+      } catch (e) {
+        const mapped = mapAuthError(e, reply);
+        if (mapped) return mapped;
+        throw e;
       }
-      const ok = await argon2.verify(user.serviceApiKeyHash, parsed.data.apiKey);
-      if (!ok) {
-        return reply.code(401).send({ error: "invalid_credentials" });
+    },
+  );
+
+  app.post(
+    "/v1/auth/logout",
+    { preHandler: requireJwt(config) },
+    async (request: FastifyRequest, reply: FastifyReply) => {
+      if (!requireAuth(request, reply)) return;
+      try {
+        await executeLogout(deps, request.auth.sub);
+        return reply.code(204).send();
+      } catch (e) {
+        const mapped = mapAuthError(e, reply);
+        if (mapped) return mapped;
+        throw e;
       }
-      if (user.status !== "active") {
-        return reply.code(403).send({ error: "account_inactive" });
-      }
-      const token = await signAccessToken(config, {
-        sub: user.id,
-        role: user.role,
-        principalKind: user.principalKind,
-      });
-      return { accessToken: token, tokenType: "Bearer", expiresInSeconds: config.JWT_ACCESS_TTL_SECONDS };
     },
   );
 }

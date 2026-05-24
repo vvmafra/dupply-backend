@@ -18,7 +18,7 @@ dupply-backend/
   package.json
   src/                 # Fastify + application + domain + integrations
   drizzle/             # SQL migrations (Drizzle)
-  scripts/             # etherfuse-smoke.ts, seed-platform-dev.ts
+  scripts/             # etherfuse-smoke.ts, etherfuse-kyc-smoke.ts
   soroban/
     Cargo.toml
     crates/duplicata-registry/
@@ -45,8 +45,12 @@ HTTP endpoints (prefix = server root, e.g. `http://localhost:8080`):
 | Method | Path | Authentication | Description |
 |--------|------|----------------|-------------|
 | GET | `/health` | — | Liveness. |
-| POST | `/v1/auth/login` | — | Human login → JWT (`JWT_SECRET` required). |
-| POST | `/v1/auth/service-login` | — | Service principal login (`email` + `apiKey`). |
+| POST | `/v1/auth/login` | — | Human login → access + refresh tokens (`JWT_SECRET` required). |
+| POST | `/v1/auth/refresh` | — | Rotate refresh token and issue new access token. |
+| POST | `/v1/auth/logout` | Bearer | Invalidate stored refresh token (`204`). |
+| GET | `/v1/accounts/:id` | Bearer | Account profile (owner or admin). |
+| PATCH | `/v1/accounts/:id` | Bearer | Update password (owner or admin). |
+| DELETE | `/v1/accounts/:id` | Bearer (admin) | Soft-delete account. |
 | GET | `/v1/receivables` | `Authorization: Bearer` | List receivables (role-scoped). |
 | GET | `/v1/receivables/:id` | Bearer | Receivable detail. |
 | POST | `/v1/receivables` | Bearer | Seller creates receivable (`under_review`). |
@@ -88,7 +92,7 @@ Not shipped as code. See **[indexer/README.md](indexer/README.md)** for intent a
 ## Database: SQLite, Docker Postgres, or Supabase
 
 - **Default dev:** SQLite (`DATABASE_URL=file:./data/dupply.db`).
-- **Supabase (recommended for shared dev / frontend data):** set `DATABASE_URL` to the Supabase Postgres URI, then `npm run db:push` and `npm run seed:platform:dev`. Step-by-step: [`docs/notes/2026-05-20_supabase-setup.md`](docs/notes/2026-05-20_supabase-setup.md).
+- **Supabase (recommended for shared dev / frontend data):** set `DATABASE_URL` to the Supabase Postgres URI, then `npm run db:push`. Account seeding is deferred to the seller module PRD. Step-by-step: [`docs/notes/2026-05-20_supabase-setup.md`](docs/notes/2026-05-20_supabase-setup.md).
 - **Local Docker Postgres:** [docker/README.md](docker/README.md).
 
 ---

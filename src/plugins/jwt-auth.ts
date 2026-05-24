@@ -25,7 +25,7 @@ export function requireJwt(config: AppConfig) {
       request.auth = {
         sub: payload.sub,
         role: payload.role,
-        principalKind: payload.principalKind,
+        profileId: payload.profileId,
       };
     } catch {
       return reply.code(401).send({ error: "unauthorized" });

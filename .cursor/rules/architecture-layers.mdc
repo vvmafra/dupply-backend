@@ -1,0 +1,68 @@
+---
+description: DDD layers, CQRS discipline, and import boundaries for src/
+globs: src/**/*
+alwaysApply: false
+---
+
+# Architecture layers (src/)
+
+Source of truth: `docs/ARCHITECTURE-RULES.md`. Summary for day-to-day edits:
+
+## Layer rules
+
+| Layer | Path | May do | Must not |
+| ----- | ---- | ------ | -------- |
+| HTTP | `routes/`, `plugins/`, `server.ts` | Zod validation, auth, thin handlers (~≤50 lines) | Business orchestration, Drizzle in new flows |
+| Application | `application/` | Use cases, orchestrate domain + integrations + DB | Import Fastify types into domain |
+| Domain | `domain/` | Invariants, status machines, pure types | Fastify, Drizzle, HTTP clients, `process.env` |
+| Integrations | `integrations/` | External SDKs, webhook verify, RPC | Dupply HTTP schema, cross-import Ramp ↔ Trade bill |
+| Infrastructure | `db/` | Schema, migrations, repositories | Business rules |
+| Generated | `generated/` | Soroban bindings from Wasm | Hand-edit (regenerate instead) |
+
+## Import direction
+
+```
+routes → application → domain
+routes/application → integrations, db
+domain → (nothing external)
+```
+
+**Ramp ↔ Trade bill:** no cross-imports between `integrations/etherfuse` and `integrations/registry` / `domain/tradeBill`.
+
+## Handler template (mandatory for new/changed routes)
+
+1. **Zod parse** in the route only (HTTP input shape).
+2. **Config guards** in the route (`JWT_SECRET` missing → 503, etc.).
+3. **Delegate** to `application/{context}/commands|queries/executeXxx(deps, input)`.
+4. Route **≤ ~50 lines** per handler — no Drizzle, no SDK clients, no `argon2`.
+5. **Errors:** domain/application throw typed errors (e.g. `AuthError`); route maps once via `map{Context}Error`.
+6. **`AppDeps`** (`application/deps.ts`) is the composition-root entry point for handlers.
+
+### Canonical reference: auth login
+
+| Concern | Location |
+| ------- | -------- |
+| HTTP + Zod + status mapping | `routes/v1/auth.ts` |
+| Login orchestration | `application/auth/commands/loginCommands.ts` |
+| Account/principal invariants | `domain/auth/policies.ts` |
+| Typed auth errors | `domain/auth/errors.ts` |
+| JWT sign/verify | `lib/jwt.ts` (called from application) |
+
+Copy this split when extracting other fat routes.
+
+## CQRS naming
+
+- **Command** — mutates state or calls mutating external APIs (`executeHumanLogin`, `executeCreateReceivable`)
+- **Query** — read-only (`executeGetRampAssets`, list receivables)
+
+Prefer `commands/` vs `queries/` folders when adding application handlers. Function prefix: **`execute`** + use case name.
+
+## Config & persistence
+
+- New env vars → `config.ts` + `.env.example` + `API.md`
+- Schema changes → `src/db/schema.ts` + `npm run db:generate` + migrate
+- Multi-row atomic writes → `db.transaction()`
+
+## Legacy debt
+
+Existing fat route handlers with inline Drizzle are grandfathered until touched; **on any significant edit**, extract to `application/` following the auth template above.

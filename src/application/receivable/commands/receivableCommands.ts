@@ -1,8 +1,8 @@
 import { randomUUID } from "node:crypto";
-import { eq } from "drizzle-orm";
+import { and, eq, isNull } from "drizzle-orm";
 
 import type { AppDeps } from "../../deps.js";
-import { platformUsers, receivables } from "../../../db/schema.runtime.js";
+import { accounts, receivables } from "../../../db/schema.runtime.js";
 import {
   assertReceivableTransition,
   PLATFORM_ROLES,
@@ -31,20 +31,19 @@ export async function executeCreateReceivable(
   }
   const [seller] = await db
     .select()
-    .from(platformUsers)
-    .where(eq(platformUsers.id, input.sellerUserId))
+    .from(accounts)
+    .where(
+      and(
+        eq(accounts.id, input.sellerUserId),
+        eq(accounts.role, PLATFORM_ROLES.SELLER),
+        isNull(accounts.deletedAt),
+      ),
+    )
     .limit(1);
-  if (!seller || seller.role !== PLATFORM_ROLES.SELLER) {
+  if (!seller) {
     throw new Error("invalid_seller");
   }
-  const [payer] = await db
-    .select()
-    .from(platformUsers)
-    .where(eq(platformUsers.id, input.payerUserId))
-    .limit(1);
-  if (!payer || payer.role !== PLATFORM_ROLES.PAYER) {
-    throw new Error("invalid_payer");
-  }
+  // Payer entity not yet implemented — accept opaque payerUserId until Module 4/5.
   const id = randomUUID();
   const t = nowMs();
   await db.insert(receivables).values({

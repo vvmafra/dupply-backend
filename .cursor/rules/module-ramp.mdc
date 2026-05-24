@@ -1,0 +1,88 @@
+---
+description: Módulo ramp — quotes e orders Etherfuse para on/off ramp; migração de schema legado
+globs: src/routes/v1/ramp*,src/integrations/etherfuse/**,src/domain/ramp/**,src/application/ramp/**
+alwaysApply: false
+---
+
+# Módulo 8 — ramp (Etherfuse)
+
+Integração de on/off ramp via Etherfuse. Tabelas existentes (`ramp_quotes` e `ramp_orders`) são mantidas com ajustes para alinhar ao novo padrão de schema (timestamps nativos + soft delete).
+
+---
+
+## Schemas
+
+```typescript
+export const rampQuotes = pgTable("ramp_quotes", {
+  id:              text("id").primaryKey(),                      // cuid2
+  userId:          text("user_id"),                             // accountId do requisitante (nullable — pode ser sistema)
+  provider:        text("provider").notNull().default("etherfuse"),
+  externalQuoteId: text("external_quote_id").notNull(),
+  requestJson:     text("request_json").notNull(),
+  responseJson:    text("response_json").notNull(),
+  expiresAt:       timestamp("expires_at"),
+  status:          text("status").notNull().default("active"),  // active | expired | used
+  createdAt:       timestamp("created_at").notNull().defaultNow(),
+  updatedAt:       timestamp("updated_at").notNull().defaultNow(),
+  deletedAt:       timestamp("deleted_at"),
+});
+
+export const rampOrders = pgTable("ramp_orders", {
+  id:              text("id").primaryKey(),                      // cuid2
+  userId:          text("user_id"),                             // accountId do requisitante
+  rampQuoteId:     text("ramp_quote_id").notNull().references(() => rampQuotes.id),
+  externalOrderId: text("external_order_id").notNull(),
+  status:          text("status").notNull().default("created"), // created | processing | completed | failed
+  requestJson:     text("request_json").notNull(),
+  responseJson:    text("response_json"),
+  createdAt:       timestamp("created_at").notNull().defaultNow(),
+  updatedAt:       timestamp("updated_at").notNull().defaultNow(),
+  deletedAt:       timestamp("deleted_at"),
+});
+```
+
+---
+
+## Migração do schema legado
+
+| Campo legado | Tipo legado | Campo novo | Tipo novo |
+|---|---|---|---|
+| `expires_at_ms` (text) | `text` ms epoch | `expires_at` | `timestamp` |
+| `created_at_ms` (text) | `text` ms epoch | `created_at` | `timestamp` |
+| `updated_at_ms` (text) | `text` ms epoch | `updated_at` | `timestamp` |
+| — | — | `deleted_at` | `timestamp` nullable |
+
+> Migration script deve converter ms epoch → timestamp no momento de deploy.
+
+---
+
+## Bounded context — isolamento
+
+- `ramp_quotes` e `ramp_orders` são do bounded context **Ramp**.
+- **Nenhum código** de `integrations/registry` ou `domain/tradeBill` deve importar daqui, e vice-versa.
+- Correlação com outros contextos apenas via IDs explícitos no banco.
+
+---
+
+## Regras de negócio
+
+- `ramp_quotes` tem TTL (`expiresAt`) — quotes expiradas não podem originar orders.
+- `ramp_orders` referencia obrigatoriamente um `ramp_quote` válido.
+- Webhook Etherfuse (`webhook-etherfuse.ts`) atualiza `ramp_orders.status` e `responseJson`.
+- `deletedAt` presente mas raramente usado — soft delete de quotes/orders apenas em casos de inconsistência administrativa.
+
+---
+
+## Rotas existentes (manter, apenas migrar timestamps)
+
+- `POST /v1/ramp/quote` — cria quote
+- `POST /v1/ramp/order` — cria order
+- `GET /v1/ramp/order/:id` — lê order
+- `POST /v1/ramp/webhook` — webhook Etherfuse (sem auth JWT — usa assinatura Etherfuse)
+
+---
+
+## Dependências
+
+- Nenhuma FK direta para outros módulos em v1 (`userId` é referência informal).
+- Integração `integrations/etherfuse` — cliente HTTP Etherfuse.

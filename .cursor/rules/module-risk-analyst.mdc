@@ -1,0 +1,81 @@
+---
+description: Módulo risk_analyst e admin — perfis de plataforma vinculados a accounts
+globs: src/routes/v1/risk-analysts*,src/routes/v1/admins*,src/domain/risk-analyst/**,src/domain/admin/**
+alwaysApply: false
+---
+
+# Módulo 3 — risk_analyst e admin
+
+Perfis de operadores internos da plataforma. Ambos seguem o mesmo padrão: um `account` (role correspondente) + um registro de perfil com dados básicos.
+
+---
+
+## Schemas
+
+```typescript
+export const riskAnalysts = pgTable("risk_analysts", {
+  id:        text("id").primaryKey(),                      // cuid2
+  status:    text("status").notNull().default("active"),   // active | inactive
+  name:      text("name").notNull(),
+  accountId: text("account_id").notNull().unique().references(() => accounts.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+});
+
+export const admins = pgTable("admins", {
+  id:        text("id").primaryKey(),                      // cuid2
+  status:    text("status").notNull().default("active"),   // active | inactive
+  name:      text("name").notNull(),
+  accountId: text("account_id").notNull().unique().references(() => accounts.id),
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+});
+```
+
+---
+
+## Roles e permissões (resumo)
+
+| Role | Pode fazer |
+|---|---|
+| `risk_analyst` | Aprovar/rejeitar sellers; mover receivable `under_review → offer`; mover `under_review → rejected`; enviar proposta de valor (proposedValue) |
+| `risk_analyst_agent` | Mesmo privilégio que `risk_analyst` para receivables (automação n8n/agent) — role reservada no `account`, sem tabela de perfil própria em v1 |
+| `admin` | Tudo que `risk_analyst` pode + gerenciar accounts, sellers, payers, ativar/desativar entidades |
+
+> `risk_analyst_agent` é uma role de account sem tabela de perfil dedicada em v1. Usa apenas o `account` para autenticação (API key ou JWT de serviço).
+
+---
+
+## Regras de negócio
+
+- 1:1 com `account` (unique constraint em `accountId`).
+- Criação de `risk_analyst` ou `admin` é feita via `/v1/auth/register` com a role correspondente (mesma transação que cria o account).
+- `deletedAt IS NOT NULL` impede acesso; o account correspondente também deve ter `deletedAt` setado na mesma operação.
+- `risk_analyst` não pode aprovar o próprio account ou o account de outro `risk_analyst` (somente `admin` aprova operadores internos).
+
+---
+
+## Rotas planejadas
+
+### risk_analyst
+| Método | Rota | Actor | Descrição |
+|---|---|---|---|
+| GET | `/v1/risk-analysts/:id` | admin ou próprio | Lê perfil |
+| PATCH | `/v1/risk-analysts/:id` | admin ou próprio | Atualiza nome |
+| PATCH | `/v1/risk-analysts/:id/status` | admin | Ativa/desativa |
+| DELETE | `/v1/risk-analysts/:id` | admin | Soft delete |
+
+### admin
+| Método | Rota | Actor | Descrição |
+|---|---|---|---|
+| GET | `/v1/admins/:id` | admin (qualquer) | Lê perfil |
+| PATCH | `/v1/admins/:id` | admin (próprio) | Atualiza nome |
+| DELETE | `/v1/admins/:id` | admin sênior (TBD) | Soft delete |
+
+---
+
+## Dependências
+
+- **Módulo 1** (account) — `accountId` FK obrigatório.

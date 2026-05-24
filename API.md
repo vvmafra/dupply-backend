@@ -21,8 +21,11 @@ See also [README.md](README.md) for repository overview. The service is **Fastif
 cp .env.example .env
 # DUPPLY_API_KEY — ramp, trade-bills, and internal settlement routes
 # JWT_SECRET (min 16 chars) — /v1/auth/* and Bearer auth on /v1/receivables/*
-# Optional: JWT_ACCESS_TTL_SECONDS, JWT_ISSUER, ETHERFUSE_* , DUPPLY_REGISTRY_CONTRACT_ID , SOROBAN_RPC_URL , STELLAR_NETWORK
+# CORS_ALLOWED_ORIGINS — comma-separated SPA origins (e.g. http://localhost:5173); dev defaults apply when unset
+# Optional: JWT_ACCESS_TTL_SECONDS, JWT_REFRESH_TTL_SECONDS, JWT_ISSUER, ETHERFUSE_* , DUPPLY_REGISTRY_CONTRACT_ID , SOROBAN_RPC_URL , STELLAR_NETWORK
 ```
+
+Access token claims: `sub` (account id), `role`, `profileId`. Until seller / risk_analyst / admin profile modules land, `profileId` is a mocked placeholder (`placeholder-{role}-{accountId}`).
 
 ## Commands
 
@@ -34,13 +37,18 @@ npm run dev
 ### Routes
 
 - `GET /health` — no authentication.
-- **Auth** (no Bearer; body JSON):
-  - `POST /v1/auth/login` — `{ "email", "password" }` for `principal_kind=human`; returns `{ accessToken, tokenType, expiresInSeconds }`.
-  - `POST /v1/auth/service-login` — `{ "email", "apiKey" }` for `principal_kind=service` (API key stored hashed in DB).
+- **Auth** (no Bearer on login/refresh; logout requires Bearer):
+  - `POST /v1/auth/login` — `{ "email", "password" }`; returns `{ accessToken, refreshToken, tokenType, expiresInSeconds, refreshExpiresInSeconds }`.
+  - `POST /v1/auth/refresh` — `{ "refreshToken" }`; same response shape as login (refresh token rotated).
+  - `POST /v1/auth/logout` — Bearer JWT; invalidates stored refresh token (`204`).
+- **Accounts** (`Authorization: Bearer <accessToken>`):
+  - `GET /v1/accounts/:id` — account profile (owner or admin; excludes password hash and refresh token).
+  - `PATCH /v1/accounts/:id` — `{ "password" }`; owner or admin (`204`).
+  - `DELETE /v1/accounts/:id` — admin soft-delete (`204`).
 - **Receivables** (`Authorization: Bearer <accessToken>`):
   - `GET /v1/receivables` — list (seller: own; payer: own; admin / risk / risk_analyst_agent: up to 200 rows).
   - `GET /v1/receivables/:id` — detail if caller may view.
-  - `POST /v1/receivables` — **seller**; body `{ "payerUserId" (UUID), "value", "receivableMd"? }`; creates row with `status=under_review` and `created_at_ms` / `updated_at_ms`.
+  - `POST /v1/receivables` — **seller**; body `{ "payerUserId" (UUID), "value", "receivableMd"? }`; validates seller against `accounts` (`role=seller`, not soft-deleted); `payerUserId` is accepted without DB lookup until the payer module lands; creates row with `status=under_review`.
   - `POST /v1/receivables/:id/risk-decision` — **risk_analyst** or **risk_analyst_agent**; body `{ "decision": "offer" | "reject", "proposedValue"? }` (`proposedValue` required when `decision` is `offer`).
   - `POST /v1/receivables/:id/confirm` — **payer** bound to `payer_user_id`; moves `offer` → `confirmed`.
 - **Internal settlement** (`X-Dupply-Api-Key` only — workers / BFF; not for end users):  
@@ -116,18 +124,17 @@ curl -sS "$BASE/v1/ramp/assets?blockchain=stellar&currency=brl&wallet=G..." \
   -H "X-Dupply-Api-Key: $DUPPLY_API_KEY"
 ```
 
-### Platform (migrate + seed)
+### Platform (migrate)
 
 ```bash
 mkdir -p data
 DATABASE_URL=file:./data/dupply.db npm run db:migrate
-DATABASE_URL=file:./data/dupply.db JWT_SECRET='your-secret-at-least-16-chars' npm run seed:platform:dev
-# Human dev password: dev-password-change-me (see script output for one-time service API key)
+# Account seeding deferred to seller module PRD — insert test accounts via SQL or future seed script.
 ```
 
 ### Receivable lifecycle (HTTP)
 
-Requires `JWT_SECRET`, `DUPPLY_API_KEY`, and seeded users (`npm run seed:platform:dev`). Use `sqlite3` on `DATABASE_URL` to read `platform_users.id` for `payerUserId`.
+Requires `JWT_SECRET`, `DUPPLY_API_KEY`, and existing seller/payer account ids. Payer ids are opaque until the payer entity module ships.
 
 ```bash
 BASE=http://localhost:8080

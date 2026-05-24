@@ -1,0 +1,71 @@
+---
+description: Módulo documents — armazenamento polimórfico de documentos vinculados a qualquer entidade
+globs: src/routes/v1/documents*,src/domain/document/**,src/application/document/**
+alwaysApply: false
+---
+
+# Módulo 6 — documents
+
+Tabela polimórfica para documentos (PDFs, imagens, contratos) associados a qualquer entidade da plataforma.
+
+---
+
+## Schema
+
+```typescript
+export const documents = pgTable("documents", {
+  id:         text("id").primaryKey(),                    // cuid2
+  status:     text("status").notNull().default("active"), // active | inactive
+  parentType: text("parent_type").notNull(),              // enum controlado — ver abaixo
+  parentId:   text("parent_id").notNull(),                // id da entidade pai
+  url:        text("url").notNull(),                      // URL de acesso ao documento (S3, Supabase Storage, etc.)
+  mimeType:   text("mime_type"),                          // ex: application/pdf, image/jpeg
+  filename:   text("filename"),                           // nome original do arquivo
+  createdAt:  timestamp("created_at").notNull().defaultNow(),
+  updatedAt:  timestamp("updated_at").notNull().defaultNow(),
+  deletedAt:  timestamp("deleted_at"),
+});
+```
+
+---
+
+## Valores válidos de `parentType`
+
+```typescript
+const DOCUMENT_PARENT_TYPES = [
+  "seller",
+  "receivable",
+  "payer",
+  "risk_analyst",
+] as const;
+```
+
+- Apenas valores deste enum são aceitos. Validar no layer de aplicação (Zod + check constraint).
+- Novos `parentType` devem ser adicionados ao enum antes de usar — nunca string livre.
+
+---
+
+## Regras de negócio
+
+- Não há FK de banco para `parentId` (FK polimórfica não existe nativamente em SQL relacional). A integridade referencial é garantida na **camada de aplicação**.
+- Ao deletar (soft) uma entidade pai, os documentos vinculados **não** são automaticamente deletados — ficam acessíveis para histórico. Somente admin pode deletar documentos.
+- `url` deve apontar para storage controlado pela plataforma (não URLs externas arbitrárias).
+- Upload real do arquivo fica no storage (Supabase Storage / S3); esta tabela guarda apenas a referência.
+
+---
+
+## Rotas planejadas
+
+| Método | Rota | Actor | Descrição |
+|---|---|---|---|
+| POST | `/v1/documents` | seller, risk_analyst ou admin | Upload e registro do documento |
+| GET | `/v1/documents/:id` | dono do parentId ou admin | Download/acesso ao documento |
+| GET | `/v1/documents?parentType=&parentId=` | dono do parentId ou admin | Lista documentos de uma entidade |
+| DELETE | `/v1/documents/:id` | admin | Soft delete |
+
+---
+
+## Dependências
+
+- Pode ser construído após **Módulo 1** (account) para auth.
+- Não tem FK de banco para outros módulos, mas logicamente depende dos módulos cujas entidades serão `parentType`.

@@ -122,6 +122,19 @@ Legend: **Yes** = allowed. **Avoid** = legacy debt or documented exception only;
 
 Existing code in `routes/v1/*.ts` with inline Drizzle orchestration **does not** violate these rules until touched; when **significantly changing** a handler, **move** toward the rules (extract command/query or port).
 
+### 9.1 Canonical example — platform auth (account module)
+
+Use **`POST /v1/auth/login`**, **`POST /v1/auth/refresh`**, and **`POST /v1/auth/logout`** as the reference split:
+
+| Layer | Files |
+| ----- | ----- |
+| HTTP | `routes/v1/auth.ts`, `routes/v1/accounts.ts` — Zod, `JWT_SECRET` guard, error mappers |
+| Application | `application/account/commands/loginCommands.ts` — `executeHumanLogin`, `executeRefreshToken`, `executeLogout`; `application/account/queries/getAccountQuery.ts`; password/soft-delete commands |
+| Domain | `domain/account/policies.ts`, `domain/account/errors.ts` — login guards, authorization (self \| admin), `AuthError` / `AccountError` |
+| Infra (technical) | `lib/jwt.ts` (`profileId` claim), `lib/refreshToken.ts`, Drizzle in application until repositories exist |
+
+New or refactored routes should mirror this layout per bounded context.
+
 ---
 
 ## 10. Quick PR checklist

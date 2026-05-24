@@ -1,0 +1,100 @@
+---
+description: Módulo payer — entidade sacado, autenticação via magic link, confirmação de receivable
+globs: src/routes/v1/payers*,src/domain/payer/**,src/application/payer/**
+alwaysApply: false
+---
+
+# Módulo 4 — payer
+
+O **sacado** é a empresa compradora que emitiu a duplicata ao cedente (seller). O payer é notificado sobre a antecipação e precisa confirmar o aceite para que o fluxo de liquidação prossiga.
+
+---
+
+## Schema
+
+```typescript
+export const payers = pgTable("payers", {
+  id:        text("id").primaryKey(),                      // cuid2
+  status:    text("status").notNull().default("active"),   // active | inactive
+  legalName: text("legal_name").notNull(),                 // razão social
+  email:     text("email").notNull(),
+  cnpj:      text("cnpj").notNull().unique(),              // identificador principal do payer
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+});
+```
+
+---
+
+## Decisões de design
+
+- **Sem `accountId`** — payer **não tem account** na plataforma. Não faz login convencional.
+- **Sem `receivableId`** — o vínculo é feito na tabela `receivable` (receivable tem `payerId`). Um payer pode estar vinculado a múltiplos receivables ao longo do tempo.
+- **CNPJ como identificador único** — um mesmo CNPJ (empresa sacada) compartilha o mesmo registro de payer mesmo que apareça em múltiplos receivables de sellers diferentes.
+- **email** não é único no banco (uma empresa pode ter múltiplos contatos), mas é o canal de notificação principal.
+
+---
+
+## Autenticação — magic link
+
+O payer não faz login. Ele recebe um **magic link** por email quando um receivable entra em status `offer`.
+
+```
+Fluxo:
+1. risk_analyst move receivable de under_review → offer
+2. Sistema gera um token de magic link vinculado ao receivable + payerId
+3. Email enviado ao payer.email com o link
+4. Payer clica no link → token validado → payer confirma ou rejeita
+5. Sistema move receivable de offer → confirmed (ou mantém/cancela conforme regra)
+```
+
+**Token de magic link:**
+- Gerado na aplicação (CSPRNG, 32 bytes, base64url).
+- Armazenado em tabela separada: `payer_magic_tokens` (id, payerId, receivableId, token_hash, expiresAt, usedAt).
+- Expiração: 72h (configurável).
+- De uso único — `usedAt` é setado na primeira utilização.
+- **Não armazenar token em claro** — guardar apenas o hash (SHA-256).
+
+### Schema da tabela auxiliar
+
+```typescript
+export const payerMagicTokens = pgTable("payer_magic_tokens", {
+  id:          text("id").primaryKey(),
+  payerId:     text("payer_id").notNull().references(() => payers.id),
+  receivableId: text("receivable_id").notNull().references(() => receivables.id),
+  tokenHash:   text("token_hash").notNull().unique(),   // SHA-256 do token em claro
+  expiresAt:   timestamp("expires_at").notNull(),
+  usedAt:      timestamp("used_at"),                    // null = ainda válido
+  createdAt:   timestamp("created_at").notNull().defaultNow(),
+});
+```
+
+---
+
+## Regras de negócio
+
+- Payer é criado/reutilizado no momento em que o seller submete um receivable referenciando aquele CNPJ (upsert por CNPJ).
+- Se o CNPJ já existe em `payers`, reutiliza o registro existente (não cria duplicata).
+- Payer com `deletedAt IS NOT NULL` não pode receber novos receivables vinculados.
+- Payer com `status = 'inactive'` ainda pode ter receivables históricos, mas novos receivables não podem ser vinculados.
+
+---
+
+## Rotas planejadas
+
+| Método | Rota | Actor | Descrição |
+|---|---|---|---|
+| GET | `/v1/payers/:id` | admin ou risk_analyst | Lê perfil do payer |
+| GET | `/v1/payers` | admin | Lista payers |
+| PATCH | `/v1/payers/:id` | admin | Atualiza dados do payer |
+| DELETE | `/v1/payers/:id` | admin | Soft delete |
+| POST | `/v1/payers/magic-link/verify` | público (com token) | Valida magic link e retorna contexto do receivable |
+| POST | `/v1/payers/magic-link/confirm` | público (com token) | Payer confirma aceite do receivable |
+
+---
+
+## Dependências
+
+- **Módulo 1** (account) — nenhuma FK direta, mas o sistema de autenticação usa os mesmos middlewares.
+- **Módulo 5** (receivable) — `payer_magic_tokens` tem FK para `receivables`.

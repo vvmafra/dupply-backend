@@ -1,0 +1,108 @@
+---
+description: Módulo receivable — schema, status machine, RBAC transitions, domain invariants e guard assertReceivableTransition
+globs: src/domain/receivable/**,src/routes/v1/receivables*,src/routes/v1/receivable-internal*,src/application/receivable/**
+alwaysApply: false
+---
+
+# Módulo 5 — receivable
+
+## Schema
+
+```typescript
+export const receivables = pgTable("receivables", {
+  id:                 text("id").primaryKey(),
+  status:             text("status").notNull(),
+  sellerId:           text("seller_id").notNull().references(() => sellers.id),
+  payerId:            text("payer_id").notNull().references(() => payers.id),
+  receivableMetaData: text("receivable_meta_data"),
+  value:              text("value").notNull(),
+  proposedValue:      text("proposed_value"),
+  createdAt:          timestamp("created_at").notNull().defaultNow(),
+  updatedAt:          timestamp("updated_at").notNull().defaultNow(),
+  deletedAt:          timestamp("deleted_at"),
+});
+```
+
+- `value` e `proposedValue` em `text` decimal — evita imprecisão de ponto flutuante.
+- `receivableMetaData` JSON livre em v1 (número da duplicata, vencimento, etc.).
+- FK para `sellers` e `payers` — não mais para `platformUsers`.
+- Payer é identificado/criado por CNPJ no momento do POST (upsert — ver `module-payer.mdc`).
+
+---
+
+# Receivable workflows
+
+Canonical source: `src/domain/receivable/transitions.ts` + `docs/notes/2026-05-19_platform-auth-rbac-receivable-v1.md`.
+
+## Status machine
+
+```
+                  ┌──── risk_analyst / risk_analyst_agent ────►  rejected  (terminal)
+under_review ─────┤
+                  └──── risk_analyst / risk_analyst_agent ────►  offer
+                                                                      │
+                                                              payer ──►  confirmed
+                                                                              │
+                                                           system only ──►  processing
+                                                                              │
+                                                           system only ──►  completed  (terminal)
+```
+
+- **First stored status is `under_review`** — there is no `created` status in DB; `created_at` is metadata only.
+- `rejected` and `completed` are terminal; no transitions out.
+- `processing` and `completed` are **system-only** — no JWT user may trigger them.
+
+## RBAC transition matrix
+
+| From | To | Who |
+|------|----|-----|
+| *(POST /v1/receivables)* | `under_review` | `seller` (creates the row) |
+| `under_review` | `offer` | `risk_analyst` or `risk_analyst_agent` |
+| `under_review` | `rejected` | `risk_analyst` or `risk_analyst_agent` |
+| `offer` | `confirmed` | `payer` bound to `payer_user_id` on the row |
+| `confirmed` | `processing` | **system** (`X-Dupply-Api-Key` only) |
+| `processing` | `completed` | **system** (`X-Dupply-Api-Key` only) |
+
+## Domain guard — always use it
+
+```typescript
+// ✅ GOOD — enforce in one place
+assertReceivableTransition(from, to, actor);
+
+// ❌ BAD — inline role checks in HTTP handlers
+if (req.user.role !== 'risk_analyst') throw ...
+```
+
+`assertReceivableTransition` lives in `src/domain/receivable/transitions.ts`. All mutating routes **must** call it. Do not duplicate logic in route handlers.
+
+## Actor shape
+
+```typescript
+type TransitionActor =
+  | { kind: "system" }             // X-Dupply-Api-Key callers
+  | { kind: "user"; role: string } // JWT callers
+```
+
+## Roles
+
+```
+seller            — creates receivables; no lifecycle transitions after that
+payer             — confirms discount; bound to receivable.payer_user_id
+risk_analyst      — human review
+risk_analyst_agent — automation (n8n/agent); same privilege as risk_analyst for receivables
+admin             — platform ops; specific route ACL TBD
+```
+
+## Key invariants
+
+- `seller` and `payer` are **always different identities** on the same receivable.
+- `proposedValue` is required when `risk_analyst` moves to `offer`; must be present in DB.
+- `processing` / `completed` cannot be triggered by any authenticated user — internal route only (`POST /v1/internal/receivables/:id/advance-settlement`).
+- Timestamps: `created_at_ms` is immutable (set on insert); `updated_at_ms` is bumped on every transition.
+
+## Adding new transitions
+
+1. Update `RECEIVABLE_STATUS` constant in `transitions.ts`.
+2. Add the case inside `assertReceivableTransition`.
+3. Write unit tests in `tests/domain/receivable/transitions.test.ts` covering allowed actor and disallowed actors.
+4. Update `docs/notes/2026-05-19_platform-auth-rbac-receivable-v1.md` if the rule is normative.

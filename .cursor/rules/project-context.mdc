@@ -1,0 +1,60 @@
+---
+description: Dupply backend stack, bounded contexts, and where to look for authoritative docs
+alwaysApply: true
+---
+
+# Dupply backend — project context
+
+**Repo:** `dupply-backend` — Fastify HTTP API (`src/`) + Soroban contract (`soroban/`).
+
+## Stack
+
+- **Runtime:** Node 20+, TypeScript (ESM), Fastify 5
+- **Persistence:** Drizzle ORM — PostgreSQL/Supabase (prod + dev via Docker); `drizzle-orm/pg-core`
+- **Auth:** JWT (humans) + `X-Dupply-Api-Key` (service/BFF/workers); payers via magic link
+- **Integrations:** Etherfuse (ramp/FX), Stellar Soroban RPC (trade bill registry)
+
+## Entities & modules (build order)
+
+| # | Módulo | Entidades | Context file |
+|---|--------|-----------|--------------|
+| 1 | account | `accounts` | `module-account.mdc` |
+| 2 | seller + wallet | `sellers`, `wallets` | `module-seller.mdc`, `module-wallet.mdc` |
+| 3 | risk_analyst + admin | `risk_analysts`, `admins` | `module-risk-analyst.mdc` |
+| 4 | payer | `payers`, `payer_magic_tokens` | `module-payer.mdc` |
+| 5 | receivable | `receivables` | `receivable-workflows.mdc` |
+| 6 | documents | `documents` | `module-documents.mdc` |
+| 7 | registry on-chain | `registry_on_chain` | `module-registry.mdc` |
+| 8 | ramp | `ramp_quotes`, `ramp_orders` | `module-ramp.mdc` |
+
+Full entity map + cross-cutting standards (timestamps, soft delete, IDs): **`entities-overview.mdc`**
+
+## Bounded contexts (do not mix)
+
+| Context | Code paths | External system |
+| ------- | ---------- | --------------- |
+| **Platform / Identity** | `routes/v1/auth`, `accounts`, `sellers`, `risk-analysts`, `admins`, `payers`; `domain/account`, `domain/seller` | Internal DB only |
+| **Receivables** | `routes/v1/receivables`, `receivable-internal`; `domain/receivable` | Internal DB only |
+| **Ramp** | `routes/v1/ramp`, `integrations/etherfuse` | Etherfuse FX API |
+| **Registry** | `routes/v1/trade-bills`, `domain/tradeBill`, `integrations/registry`, `generated/` | Soroban `TradeBillRegistry` |
+
+Cross-context correlation: explicit IDs in DB only — no tight coupling in code.
+
+## Authoritative docs (read before large changes)
+
+- `docs/ARCHITECTURE-RULES.md` — layers, CQRS, import matrix
+- `API.md` — routes, env vars, smoke checklist
+- `.cursor/rules/entities-overview.mdc` — **entity map, padrões transversais, ordem de módulos**
+- `docs/notes/2026-05-19_platform-auth-rbac-receivable-v1.md` — receivable RBAC + lifecycle
+- `docs/notes/2026-05-18_v1-duplicata-contract-integration-architecture.md` — trade bill + Soroban flow
+
+## Schema standards
+
+- **IDs:** `cuid2` gerado na aplicação
+- **Timestamps:** `timestamp` nativo PostgreSQL (`created_at`, `updated_at`, `deleted_at`)
+- **Soft delete:** `deleted_at IS NOT NULL` = deletado; toda query padrão filtra `WHERE deleted_at IS NULL`
+- **`updated_at`:** bumped em toda mutação (handler de comando ou trigger PG)
+
+## Language
+
+Code, API fields, DB columns, and technical docs are **English**. User-facing copy may be localized elsewhere.

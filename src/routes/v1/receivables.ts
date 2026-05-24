@@ -8,7 +8,7 @@ import {
   executePayerConfirm,
   executeRiskDecision,
 } from "../../application/receivable/commands/receivableCommands.js";
-import { PLATFORM_ROLES } from "../../domain/receivable/transitions.js";
+import { PLATFORM_ROLES, type PlatformRole } from "../../domain/receivable/transitions.js";
 import { receivables } from "../../db/schema.runtime.js";
 import { ReceivableTransitionError } from "../../domain/receivable/transitions.js";
 
@@ -39,17 +39,22 @@ function isStaffRole(role: string): boolean {
   );
 }
 
+function platformRole(auth: NonNullable<FastifyRequest["auth"]>): PlatformRole {
+  return auth.role as PlatformRole;
+}
+
 function canViewReceivable(
   auth: NonNullable<FastifyRequest["auth"]>,
   row: { sellerUserId: string; payerUserId: string },
 ): boolean {
-  if (auth.role === PLATFORM_ROLES.SELLER && row.sellerUserId === auth.sub) {
+  const role = platformRole(auth);
+  if (role === PLATFORM_ROLES.SELLER && row.sellerUserId === auth.sub) {
     return true;
   }
-  if (auth.role === PLATFORM_ROLES.PAYER && row.payerUserId === auth.sub) {
+  if (role === PLATFORM_ROLES.PAYER && row.payerUserId === auth.sub) {
     return true;
   }
-  if (isStaffRole(auth.role)) {
+  if (isStaffRole(role)) {
     return true;
   }
   return false;
@@ -66,12 +71,13 @@ export async function registerReceivableRoutes(
     async (request: FastifyRequest, reply: FastifyReply) => {
       if (!requireAuth(request, reply)) return;
       const { auth } = request;
+      const role = platformRole(auth);
       let rows;
-      if (auth.role === PLATFORM_ROLES.SELLER) {
+      if (role === PLATFORM_ROLES.SELLER) {
         rows = await db.select().from(receivables).where(eq(receivables.sellerUserId, auth.sub));
-      } else if (auth.role === PLATFORM_ROLES.PAYER) {
+      } else if (role === PLATFORM_ROLES.PAYER) {
         rows = await db.select().from(receivables).where(eq(receivables.payerUserId, auth.sub));
-      } else if (isStaffRole(auth.role)) {
+      } else if (isStaffRole(role)) {
         rows = await db.select().from(receivables).limit(200);
       } else {
         return reply.code(403).send({ error: "forbidden" });
@@ -134,7 +140,8 @@ export async function registerReceivableRoutes(
     async (request: FastifyRequest, reply: FastifyReply) => {
       if (!requireAuth(request, reply)) return;
       const { auth } = request;
-      if (auth.role !== PLATFORM_ROLES.RISK_ANALYST && auth.role !== PLATFORM_ROLES.RISK_ANALYST_AGENT) {
+      const role = platformRole(auth);
+      if (role !== PLATFORM_ROLES.RISK_ANALYST && role !== PLATFORM_ROLES.RISK_ANALYST_AGENT) {
         return reply.code(403).send({ error: "forbidden" });
       }
       const id = (request.params as { id: string }).id;
@@ -145,7 +152,7 @@ export async function registerReceivableRoutes(
       try {
         await executeRiskDecision(deps, {
           receivableId: id,
-          actorRole: auth.role,
+          actorRole: role,
           decision: parsed.data.decision,
           proposedValue: parsed.data.proposedValue,
         });
@@ -171,7 +178,7 @@ export async function registerReceivableRoutes(
     async (request: FastifyRequest, reply: FastifyReply) => {
       if (!requireAuth(request, reply)) return;
       const { auth } = request;
-      if (auth.role !== PLATFORM_ROLES.PAYER) {
+      if (platformRole(auth) !== PLATFORM_ROLES.PAYER) {
         return reply.code(403).send({ error: "forbidden" });
       }
       const id = (request.params as { id: string }).id;

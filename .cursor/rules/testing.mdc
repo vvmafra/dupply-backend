@@ -1,0 +1,55 @@
+---
+description: Onde e como escrever testes — pasta tests/ espelhando src/, Node test runner
+globs: tests/**/*
+alwaysApply: false
+---
+
+# Testes (tests/)
+
+Testes ficam **fora de `src/`**, na pasta irmã `tests/`, espelhando a estrutura de `src/`.
+
+## Layout
+
+```
+src/domain/account/policies.ts     →  tests/domain/account/policies.test.ts
+src/application/account/commands/  →  tests/application/account/commands/
+src/routes/v1/accounts.ts          →  tests/routes/v1/accountAuthRoutes.test.ts
+```
+
+- **Nunca** criar `*.test.ts` dentro de `src/`.
+- Nome do arquivo: `{module}.test.ts` (mesmo nome do módulo testado + `.test.ts`).
+- Subpastas de `tests/` replicam o caminho relativo em `src/` (sem o prefixo `src/`).
+
+## Imports
+
+Importar código de produção via caminho relativo até `src/`:
+
+```typescript
+// tests/domain/account/policies.test.ts
+import { assertCanReadAccount } from "../../../src/domain/account/policies.js";
+```
+
+- Sempre usar extensão `.js` nos imports (NodeNext / ESM).
+- Testes **não** importam outros testes; importam apenas de `src/`.
+
+## Runner e stack
+
+- **Runner:** Node.js built-in (`node:test` + `node:assert/strict`).
+- **Comando:** `npm test` → `node --import tsx --test $(find tests -name '*.test.ts')`.
+- Sem Jest/Vitest — manter o padrão existente.
+
+## Tipos de teste
+
+| Tipo | Onde | Exemplo |
+|------|------|---------|
+| Unit (domain/lib) | `tests/domain/`, `tests/lib/` | policies, transitions |
+| Application | `tests/application/` | commands, queries com DB in-memory |
+| HTTP / route | `tests/routes/` | Fastify `app.inject()` |
+
+Testes de integração/e2e futuros: `tests/integration/` ou `tests/e2e/` (não co-localizar em `src/`).
+
+## Ao adicionar feature
+
+1. Implementar em `src/`.
+2. Criar teste em `tests/` no caminho espelhado.
+3. Rodar `npm test` antes de finalizar.

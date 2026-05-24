@@ -1,0 +1,77 @@
+---
+description: Módulo wallet — carteiras Stellar (classic wallet e smart account), vínculo com seller e plataforma
+globs: src/routes/v1/wallets*,src/domain/wallet/**,src/application/wallet/**,src/integrations/stellar/**
+alwaysApply: false
+---
+
+# Módulo 2 — wallet
+
+Carteiras Stellar usadas pela plataforma e pelos sellers para operações on-chain (emissão de trade bills, liquidações). Parte do módulo 2 (construída junto com seller).
+
+---
+
+## Schema
+
+```typescript
+export const wallets = pgTable("wallets", {
+  id:               text("id").primaryKey(),                      // cuid2
+  status:           text("status").notNull().default("active"),   // active | inactive
+  network:          text("network").notNull(),                    // testnet | mainnet
+  address:          text("address").notNull(),                    // Stellar public key (G...)
+  type:             text("type").notNull(),                       // classic_wallet | smart_account
+  credentialId:     text("credential_id"),                       // obrigatório se type=smart_account
+  secretEncrypted:  text("secret_encrypted"),                    // obrigatório se type=classic_wallet
+  signerPublicKey:  text("signer_public_key").notNull(),
+  createdTxHash:    text("created_tx_hash"),                     // hash da tx que criou a conta on-chain
+  parentType:       text("parent_type").notNull(),               // seller | platform
+  sellerId:         text("seller_id").references(() => sellers.id), // nullable se parentType=platform
+  createdAt:        timestamp("created_at").notNull().defaultNow(),
+  updatedAt:        timestamp("updated_at").notNull().defaultNow(),
+  deletedAt:        timestamp("deleted_at"),                     // presente mas não ativado em v1
+});
+```
+
+---
+
+## Regras de negócio
+
+### Invariantes por tipo
+- `type = 'classic_wallet'` → `secretEncrypted` **obrigatório**, `credentialId` deve ser null.
+- `type = 'smart_account'` → `credentialId` **obrigatório**, `secretEncrypted` deve ser null.
+- Validação deve ocorrer na camada de aplicação (não apenas banco).
+
+### Invariantes por parentType
+- `parentType = 'seller'` → `sellerId` **obrigatório** (FK para sellers).
+- `parentType = 'platform'` → `sellerId` deve ser null.
+
+### Network
+- `network = 'testnet'` ou `'mainnet'` — seller de testnet é um account distinto de seller de mainnet. Não há migração de testnet para mainnet via troca de wallet.
+
+### Soft delete em v1
+- Campo `deletedAt` existe no schema mas **não é utilizado em v1**.
+- Wallets não são deletadas — somente desativadas via `status = 'inactive'`.
+- Documentar explicitamente se/quando soft delete for ativado.
+
+### Segurança
+- `secretEncrypted` nunca deve ser exposto em responses de API — excluir do schema de resposta.
+- `credentialId` é referência a um credential externo (passkey/HSM); não é segredo, mas deve ser tratado com cuidado nos logs.
+
+---
+
+## Rotas planejadas
+
+| Método | Rota | Actor | Descrição |
+|---|---|---|---|
+| POST | `/v1/wallets` | sistema / admin | Cria wallet (geralmente chamado internamente ao criar seller) |
+| GET | `/v1/wallets/:id` | seller (própria) ou admin | Lê wallet (sem expor secretEncrypted) |
+| PATCH | `/v1/wallets/:id/status` | admin | Ativa/desativa wallet |
+| GET | `/v1/sellers/:id/wallet` | seller (própria) ou admin | Shortcut para wallet do seller |
+
+> Soft delete de wallet **não exposto como rota em v1**.
+
+---
+
+## Dependências
+
+- **Módulo 2** (seller) — `sellerId` FK quando `parentType = 'seller'`.
+- Integração Stellar RPC para operações on-chain (não é dependência de schema, mas é dependência operacional).

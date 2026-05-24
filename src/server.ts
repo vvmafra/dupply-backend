@@ -2,7 +2,9 @@ import Fastify from "fastify";
 
 import { loadConfig } from "./config.js";
 import { createDb, runMigrations } from "./db/index.js";
+import { registerCors } from "./plugins/cors.js";
 import { requireDupplyApiKey } from "./plugins/dupply-auth.js";
+import { registerAccountRoutes } from "./routes/v1/accounts.js";
 import { registerAuthRoutes } from "./routes/v1/auth.js";
 import { registerReceivableInternalRoutes } from "./routes/v1/receivable-internal.js";
 import { registerReceivableRoutes } from "./routes/v1/receivables.js";
@@ -25,6 +27,8 @@ async function main(): Promise<void> {
 
   app.get("/health", async () => ({ ok: true }));
 
+  await registerCors(app, config);
+
   const appDeps = { db, config };
 
   await app.register(async (scope) => {
@@ -34,6 +38,7 @@ async function main(): Promise<void> {
   await app.register(
     async (scope) => {
       scope.addHook("preHandler", requireJwt(config));
+      await registerAccountRoutes(scope, appDeps);
       await registerReceivableRoutes(scope, appDeps);
     },
     { prefix: "" },

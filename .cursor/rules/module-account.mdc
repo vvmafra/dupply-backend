@@ -1,0 +1,97 @@
+---
+description: Módulo account — entidade de autenticação, JWT, refresh token e controle de acesso
+globs: src/routes/v1/auth*,src/domain/account/**,src/application/account/**,src/db/schema*
+alwaysApply: false
+---
+
+# Módulo 1 — account
+
+Entidade raiz de autenticação. Todo usuário humano da plataforma tem exatamente um `account`.
+
+---
+
+## Schema
+
+```typescript
+// drizzle-orm/pg-core
+export const accounts = pgTable("accounts", {
+  id:           text("id").primaryKey(),                    // cuid2
+  status:       text("status").notNull().default("active"), // active | inactive
+  email:        text("email").notNull().unique(),
+  passwordHash: text("password_hash").notNull(),
+  role:         text("role").notNull(),                     // seller | risk_analyst | admin
+  refreshToken: text("refresh_token"),                      // nullable — null quando não há sessão ativa
+  createdAt:    timestamp("created_at").notNull().defaultNow(),
+  updatedAt:    timestamp("updated_at").notNull().defaultNow(),
+  deletedAt:    timestamp("deleted_at"),                    // soft delete sentinel
+});
+```
+
+---
+
+## Regras de negócio
+
+- **1 role por account** — um account é `seller` OU `risk_analyst` OU `admin`. Nunca múltiplos.
+- **payer não tem account** — payers interagem via magic link; não constam nesta tabela.
+- **deletedAt IS NOT NULL** impede login independentemente do valor de `status`.
+- **status = 'inactive'** desativa o account (sem delete físico); o usuário não consegue logar.
+- `refreshToken` armazena o token mais recente (v1 suporta apenas 1 sessão ativa por account). Ao fazer logout ou novo login, o campo é atualizado/nulificado.
+- `passwordHash` usa bcrypt (ou argon2) — nunca armazenar senha em texto plano.
+- `email` é imutável após criação (regra de v1; revisável em v2).
+
+---
+
+## Auth — fluxo JWT
+
+```
+POST /v1/auth/register  → cria account + perfil correspondente (seller/risk_analyst/admin)
+POST /v1/auth/login     → valida email+senha; emite accessToken (JWT curto) + refreshToken; persiste refreshToken em account
+POST /v1/auth/refresh   → valida refreshToken; emite novo accessToken
+POST /v1/auth/logout    → nulifica refreshToken em account
+```
+
+**JWT payload:**
+```typescript
+{
+  sub: accountId,
+  role: "seller" | "risk_analyst" | "admin",
+  profileId: string,  // id do seller / risk_analyst / admin correspondente
+  iat: number,
+  exp: number,
+}
+```
+
+- `accessToken` expira em 15 min (curto).
+- `refreshToken` expira em 7 dias (armazenado em `account.refreshToken`).
+- Ao renovar via `/refresh`, o `refreshToken` antigo é invalidado (rotação simples).
+
+---
+
+## Rotas planejadas (CRUD + auth)
+
+| Método | Rota | Actor | Descrição |
+|---|---|---|---|
+| POST | `/v1/auth/register` | público | Cria account + perfil |
+| POST | `/v1/auth/login` | público | Emite JWT + refreshToken |
+| POST | `/v1/auth/refresh` | público (com refreshToken) | Renova accessToken |
+| POST | `/v1/auth/logout` | JWT | Invalida refreshToken |
+| GET | `/v1/accounts/:id` | admin ou próprio account | Lê account |
+| PATCH | `/v1/accounts/:id` | admin ou próprio account | Atualiza email/senha |
+| DELETE | `/v1/accounts/:id` | admin | Soft delete (seta deletedAt) |
+
+---
+
+## Invariantes
+
+- Ao criar um account com `role = seller`, **deve** ser criado um registro em `sellers` na mesma transação.
+- Ao criar um account com `role = risk_analyst`, **deve** ser criado um registro em `risk_analysts`.
+- Ao criar um account com `role = admin`, **deve** ser criado um registro em `admins`.
+- A criação de account + perfil deve ser **atômica** (transaction).
+- Registros com `deletedAt IS NOT NULL` **não** aparecem em listagens.
+
+---
+
+## Dependências
+
+- Nenhum outro módulo é pré-requisito.
+- Todos os outros módulos dependem de `account` para autenticação.

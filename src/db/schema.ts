@@ -1,32 +1,44 @@
-import { index, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { sql } from "drizzle-orm";
 
-/** Platform identity: humans (password) or services (API key hash). */
-export const platformUsers = sqliteTable(
-  "platform_users",
+/** Human authentication identity (seller | risk_analyst | admin). */
+export const ACCOUNT_STATUSES = ["active", "inactive"] as const;
+export const ACCOUNT_ROLES = ["seller", "risk_analyst", "admin"] as const;
+
+export const accounts = sqliteTable(
+  "accounts",
   {
     id: text("id").primaryKey(),
-    email: text("email").unique(),
-    passwordHash: text("password_hash"),
-    principalKind: text("principal_kind").notNull(),
-    role: text("role").notNull(),
     status: text("status").notNull().default("active"),
-    serviceApiKeyHash: text("service_api_key_hash"),
-    createdAtMs: text("created_at_ms").notNull(),
-    updatedAtMs: text("updated_at_ms").notNull(),
+    email: text("email").notNull().unique(),
+    passwordHash: text("password_hash").notNull(),
+    role: text("role").notNull(),
+    refreshToken: text("refresh_token"),
+    refreshTokenLookup: text("refresh_token_lookup"),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull().defaultNow(),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().defaultNow(),
+    deletedAt: integer("deleted_at", { mode: "timestamp" }),
   },
-  (t) => [index("platform_users_role_idx").on(t.role)],
+  (t) => [
+    check(
+      "accounts_status_check",
+      sql`${t.status} IN ('active', 'inactive')`,
+    ),
+    check(
+      "accounts_role_check",
+      sql`${t.role} IN ('seller', 'risk_analyst', 'admin')`,
+    ),
+    index("accounts_role_idx").on(t.role),
+    index("accounts_refresh_token_lookup_idx").on(t.refreshTokenLookup),
+  ],
 );
 
 export const receivables = sqliteTable(
   "receivables",
   {
     id: text("id").primaryKey(),
-    sellerUserId: text("seller_user_id")
-      .notNull()
-      .references(() => platformUsers.id),
-    payerUserId: text("payer_user_id")
-      .notNull()
-      .references(() => platformUsers.id),
+    sellerUserId: text("seller_user_id").notNull(),
+    payerUserId: text("payer_user_id").notNull(),
     status: text("status").notNull(),
     value: text("value").notNull(),
     proposedValue: text("proposed_value"),

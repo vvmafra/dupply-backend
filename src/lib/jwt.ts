@@ -1,11 +1,12 @@
 import * as jose from "jose";
 
 import type { AppConfig } from "../config.js";
+import type { AccountRole } from "../domain/account/types.js";
 
 export type AccessTokenPayload = {
   sub: string;
-  role: string;
-  principalKind: string;
+  role: AccountRole;
+  profileId: string;
 };
 
 function secretKey(config: AppConfig): Uint8Array {
@@ -19,7 +20,7 @@ export async function signAccessToken(
   const secret = secretKey(config);
   return new jose.SignJWT({
     role: payload.role,
-    principalKind: payload.principalKind,
+    profileId: payload.profileId,
   })
     .setProtectedHeader({ alg: "HS256" })
     .setSubject(payload.sub)
@@ -40,9 +41,9 @@ export async function verifyAccessToken(
   });
   const sub = payload.sub;
   const role = payload.role;
-  const principalKind = payload.principalKind;
-  if (typeof sub !== "string" || typeof role !== "string" || typeof principalKind !== "string") {
+  const profileId = payload.profileId;
+  if (typeof sub !== "string" || typeof role !== "string" || typeof profileId !== "string") {
     throw new Error("invalid_token_claims");
   }
-  return { sub, role, principalKind };
+  return { sub, role: role as AccountRole, profileId };
 }

@@ -1,0 +1,95 @@
+---
+description: Módulo registry_on_chain — registro de trade bills no contrato Soroban (substitui tradeBillDrafts + tradeBillChainRecords)
+globs: src/routes/v1/trade-bills*,src/domain/tradeBill/**,src/application/tradeBill/**,src/integrations/registry/**
+alwaysApply: false
+---
+
+# Módulo 7 — registry_on_chain
+
+Unifica as tabelas `trade_bill_drafts` e `trade_bill_chain_records` em uma única entidade que representa o ciclo de vida completo do registro de uma duplicata no contrato Soroban `TradeBillRegistry`.
+
+---
+
+## Schema
+
+```typescript
+export const registryOnChain = pgTable("registry_on_chain", {
+  id:                   text("id").primaryKey(),                   // cuid2
+  receivableId:         text("receivable_id").references(() => receivables.id), // nullable — futuro
+  issuerPublicKey:      text("issuer_public_key").notNull(),
+  status:               text("status").notNull().default("simulated"), // simulated | confirmed | failed
+  payloadJson:          text("payload_json").notNull(),            // payload enviado ao contrato
+  unsignedXdr:          text("unsigned_xdr"),
+  assembledJson:        text("assembled_json"),
+  simulationLedger:     text("simulation_ledger"),
+  predictedChainBillId: text("predicted_chain_bill_id"),
+  network:              text("network"),                           // null até confirm — testnet | mainnet
+  contractId:           text("contract_id"),                      // null até confirm
+  chainBillId:          text("chain_bill_id"),                    // null até confirm
+  txHash:               text("tx_hash"),                          // null até confirm
+  ledger:               text("ledger"),                           // null até confirm
+  issuedAtLedger:       text("issued_at_ledger"),                 // null até confirm
+  lastError:            text("last_error"),
+  createdAt:            timestamp("created_at").notNull().defaultNow(),
+  updatedAt:            timestamp("updated_at").notNull().defaultNow(),
+  confirmedAt:          timestamp("confirmed_at"),                // null até confirm
+  deletedAt:            timestamp("deleted_at"),
+});
+```
+
+> Unique index em `(chainBillId, contractId, network)` para evitar duplicatas on-chain (equivalente ao índice atual em `trade_bill_chain_records`).
+
+---
+
+## Status machine
+
+```
+simulated  →  confirmed   (tx confirmada on-chain)
+simulated  →  failed      (erro na simulação ou submissão)
+failed     →  simulated   (retry permitido)
+confirmed  →  (terminal)
+```
+
+- `confirmed` é terminal — não há transição para trás.
+- `failed` pode ser retentado (novo ciclo de simulate → confirm).
+- Campos de rede (`network`, `contractId`, `chainBillId`, `txHash`, etc.) são null até status = `confirmed`.
+
+---
+
+## Migração do schema legado
+
+| Campo legado | Tabela legada | Campo novo |
+|---|---|---|
+| `draft_id` + dados do draft | `trade_bill_drafts` | Direto em `registry_on_chain` |
+| `network`, `contract_id`, `chain_bill_id`, `tx_hash`, `ledger`, `issued_at_ledger` | `trade_bill_chain_records` | Direto em `registry_on_chain` |
+| `created_at_ms` (text) | ambas | `created_at` (timestamp) |
+| `updated_at_ms` (text) | ambas | `updated_at` (timestamp) |
+| — | — | `confirmed_at` (novo campo) |
+| — | — | `receivable_id` (FK opcional, futuro) |
+
+---
+
+## Regras de negócio
+
+- A criação de um `registry_on_chain` é **sempre disparada pelo sistema** — nunca diretamente por um usuário humano via HTTP público.
+- O vínculo `receivableId` é opcional em v1 (campo nullable) — será populado conforme o fluxo de receivable → registry for conectado.
+- `lastError` deve ser atualizado em toda tentativa que resulta em `failed`.
+- Não expor `unsignedXdr` ou `assembledJson` em respostas de API públicas.
+
+---
+
+## Rotas planejadas
+
+| Método | Rota | Actor | Descrição |
+|---|---|---|---|
+| POST | `/v1/trade-bills/simulate` | sistema (API key) | Simula emissão (draft) |
+| POST | `/v1/trade-bills/:id/confirm` | sistema (API key) | Confirma tx on-chain |
+| GET | `/v1/trade-bills/:id` | admin ou sistema | Lê estado do registro |
+| GET | `/v1/trade-bills` | admin | Lista registros |
+
+---
+
+## Dependências
+
+- **Módulo 5** (receivable) — `receivableId` FK (opcional em v1).
+- Integração `integrations/registry` (Soroban RPC) — não é dependência de schema.

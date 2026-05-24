@@ -1,0 +1,125 @@
+---
+description: Módulo seller — entidade cedente, perfil, metadados de negócio e vínculo com wallet
+globs: src/routes/v1/sellers*,src/domain/seller/**,src/application/seller/**
+alwaysApply: false
+---
+
+# Módulo 2 — seller
+
+O **cedente** é a empresa que detém duplicatas a receber e deseja antecipá-las via Dupply. Cada seller está vinculado a exatamente um `account` (role=seller) e a exatamente uma `wallet`.
+
+---
+
+## Schema
+
+```typescript
+export const sellers = pgTable("sellers", {
+  id:                         text("id").primaryKey(),                    // cuid2
+  status:                     text("status").notNull().default("pending_review"),
+  name:                       text("name").notNull(),                     // razão social ou nome fantasia
+  companyMetaData:            text("company_meta_data").notNull(),        // JSON — dados da empresa
+  legalRepresentativeMetaData: text("legal_representative_meta_data").notNull(), // JSON — representante legal
+  businessRelationsMetaData:  text("business_relations_meta_data").notNull(), // JSON — clientes e fornecedores
+  accountId:                  text("account_id").notNull().unique().references(() => accounts.id),
+  walletId:                   text("wallet_id").references(() => wallets.id), // nullable até wallet ser criada
+  createdAt:                  timestamp("created_at").notNull().defaultNow(),
+  updatedAt:                  timestamp("updated_at").notNull().defaultNow(),
+  deletedAt:                  timestamp("deleted_at"),
+});
+```
+
+---
+
+## Campos JSON — estruturas esperadas
+
+### `companyMetaData`
+```typescript
+type CompanyMetaData = {
+  legalName: string;       // razão social
+  tradeName?: string;      // nome fantasia
+  cnpj: string;
+  address: {
+    street: string;
+    number: string;
+    complement?: string;
+    neighborhood: string;
+    city: string;
+    state: string;         // UF 2 chars
+    zipCode: string;
+  };
+  phone?: string;
+  website?: string;
+};
+```
+
+### `legalRepresentativeMetaData`
+```typescript
+type LegalRepresentativeMetaData = {
+  fullName: string;
+  cpf: string;
+  email: string;
+  phone?: string;
+  role?: string;           // cargo/função
+};
+```
+
+### `businessRelationsMetaData`
+```typescript
+type BusinessRelation = {
+  legalName: string;       // razão social
+  cnpj: string;
+  sharePercentage?: number; // % de participação no faturamento (opcional)
+};
+
+type BusinessRelationsMetaData = {
+  clients:   BusinessRelation[]; // mín. 1, máx. 5
+  suppliers: BusinessRelation[]; // mín. 1, máx. 5
+};
+```
+
+> **Atenção:** "suppliers" aqui = fornecedores do cedente (quem vende para ele). "clients" = clientes do cedente (quem compra dele = potenciais sacados). A validação da contagem deve ocorrer na camada de aplicação.
+
+---
+
+## Status machine do seller
+
+```
+pending_review  →  active     (aprovado pelo risk_analyst / admin)
+pending_review  →  rejected   (reprovado pelo risk_analyst / admin)
+active          →  inactive   (desativado por admin)
+inactive        →  active     (reativado por admin)
+```
+
+- Seller recém-criado começa em `pending_review` — aguarda aprovação da plataforma antes de poder submeter receivables.
+- Seller em `rejected` não pode submeter receivables.
+- Seller com `deletedAt IS NOT NULL` é removido logicamente; nenhum receivable futuro pode ser criado.
+
+---
+
+## Regras de negócio
+
+- 1:1 com `account` (unique constraint em `accountId`).
+- 1:1 com `wallet` — `walletId` pode ser null imediatamente após criação do seller (wallet é criada em passo subsequente, pode ser na mesma transação ou em fluxo guiado).
+- `businessRelationsMetaData` é validado no layer de aplicação: mínimo 1 cliente e 1 fornecedor; máximo 5 de cada.
+- Seller só pode criar `receivable` se `status = 'active'`.
+- Criação de seller ocorre na mesma transação de criação do `account` (ver `module-account.mdc`).
+
+---
+
+## Rotas planejadas
+
+| Método | Rota | Actor | Descrição |
+|---|---|---|---|
+| GET | `/v1/sellers/:id` | seller (próprio) ou admin | Lê perfil |
+| PATCH | `/v1/sellers/:id` | seller (próprio) | Atualiza metadados |
+| PATCH | `/v1/sellers/:id/status` | admin ou risk_analyst | Aprova/rejeita/desativa |
+| DELETE | `/v1/sellers/:id` | admin | Soft delete |
+
+> O `POST` de criação é feito via `/v1/auth/register` (cria account + seller atomicamente).
+
+---
+
+## Dependências
+
+- **Módulo 1** (account) — `accountId` FK obrigatório.
+- **Módulo 2** (wallet) — `walletId` FK; wallet criada junto ou logo após o seller.

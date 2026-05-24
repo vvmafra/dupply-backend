@@ -1,0 +1,139 @@
+---
+description: Database schema, tables, relationships and conventions for all Drizzle entities in dupply-backend
+globs: src/db/**,src/db/schema.ts
+alwaysApply: false
+---
+
+# Data models and relationships
+
+Canonical source: `src/db/schema.ts`. Migrations in `drizzle/`. Runtime dialect: `src/db/dialect.ts`.
+
+## Tables overview
+
+### `platform_users`
+Platform identity — both humans (password) and service accounts (API key hash).
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | UUID |
+| `email` | text unique | null for service accounts without email |
+| `password_hash` | text | null for service accounts |
+| `principal_kind` | text NN | `human` or `service` |
+| `role` | text NN | `seller`, `payer`, `admin`, `risk_analyst`, `risk_analyst_agent` |
+| `status` | text NN | `active` (default) |
+| `service_api_key_hash` | text | null for humans |
+| `created_at_ms` / `updated_at_ms` | text NN | epoch ms as string |
+
+Index: `platform_users_role_idx` on `role`.
+
+---
+
+### `receivables`
+Core business entity. Seller submits; payer confirms; system settles.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | UUID |
+| `seller_user_id` | text NN → `platform_users.id` | Creator |
+| `payer_user_id` | text NN → `platform_users.id` | Counterpart; immutable after creation |
+| `status` | text NN | See `receivable-workflows` rule for state machine |
+| `value` | text NN | Original requested value |
+| `proposed_value` | text | Set by risk when moving to `offer` |
+| `receivable_md` | text | Optional markdown description from seller |
+| `created_at_ms` / `updated_at_ms` | text NN | epoch ms as string; `created_at_ms` immutable |
+
+Indexes: `seller_user_id`, `payer_user_id`, `status`.
+
+---
+
+### `ramp_quotes` (Ramp context)
+Etherfuse quote cache. Expires; never mutated after creation.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `user_id` | text | Optional link to `platform_users` |
+| `provider` | text NN | `etherfuse` (default) |
+| `external_quote_id` | text NN | Etherfuse quote ID |
+| `request_json` / `response_json` | text NN | Raw payloads |
+| `expires_at_ms` | text | TTL from Etherfuse |
+| `status` | text NN | `active` (default) |
+| `created_at_ms` | text NN | |
+
+---
+
+### `ramp_orders` (Ramp context)
+Etherfuse order; created from a quote.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `user_id` | text | |
+| `ramp_quote_id` | text NN → `ramp_quotes.id` | |
+| `external_order_id` | text NN | Etherfuse order ID |
+| `status` | text NN | `created` (default) |
+| `request_json` | text NN | |
+| `response_json` | text | Populated after Etherfuse response |
+| `created_at_ms` / `updated_at_ms` | text NN | |
+
+---
+
+### `trade_bill_drafts` (Trade bill context)
+Soroban `issue` pre-signing draft. Created when the API simulates the TX.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `issuer_public_key` | text NN | Stellar G... address |
+| `status` | text NN | `draft` (default) |
+| `payload_json` | text NN | `IssuePayload` as JSON |
+| `unsigned_xdr` | text | Assembled Soroban TX |
+| `assembled_json` | text | Simulation footprint |
+| `simulation_ledger` | text | Ledger at simulation time |
+| `predicted_chain_id` | text | Chain-side bill ID before confirmation |
+| `last_error` | text | Last processing error |
+| `created_at_ms` / `updated_at_ms` | text NN | |
+
+---
+
+### `trade_bill_chain_records` (Trade bill context)
+On-chain confirmation record. One per confirmed draft.
+
+| Column | Type | Notes |
+|--------|------|-------|
+| `id` | text PK | |
+| `draft_id` | text NN → `trade_bill_drafts.id` | |
+| `network` | text NN | `testnet`, `mainnet`, `futurenet` |
+| `contract_id` | text NN | Deployed `TradeBillRegistry` contract ID |
+| `chain_bill_id` | text NN | `u64` from the contract event |
+| `tx_hash` | text NN | Stellar transaction hash |
+| `ledger` / `issued_at_ledger` | text | Ledger data |
+| `created_at_ms` | text NN | |
+
+Unique index: `(chain_bill_id, contract_id, network)` — prevents duplicate confirmations.
+
+---
+
+## Cross-entity relationships
+
+```
+platform_users ──< receivables (as seller)
+platform_users ──< receivables (as payer)
+
+ramp_quotes ──< ramp_orders
+
+trade_bill_drafts ──< trade_bill_chain_records (1:1 per confirmed draft)
+```
+
+Ramp and Trade bill contexts are **isolated** — no foreign keys cross between them.
+
+---
+
+## Schema conventions
+
+- **All IDs:** `text` UUIDs — generate with `crypto.randomUUID()`.
+- **Timestamps:** `text` columns storing epoch milliseconds as strings (`Date.now().toString()`). No `integer` timestamps.
+- **Monetary values:** `text` — never `real` or `integer` for amounts.
+- **Migrations:** always via `npm run db:generate` + `npm run db:migrate`; do not hand-edit migration SQL.
+- **Transactions:** use `db.transaction()` when a command writes to 2+ tables atomically.
+- **No cross-context FK:** `ramp_*` tables must not reference `trade_bill_*` tables and vice versa.
