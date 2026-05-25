@@ -75,6 +75,7 @@ POST /v1/auth/logout    → nulifica refreshToken em account
 | POST | `/v1/auth/login` | público | Emite JWT + refreshToken |
 | POST | `/v1/auth/refresh` | público (com refreshToken) | Renova accessToken |
 | POST | `/v1/auth/logout` | JWT | Invalida refreshToken |
+| GET | `/v1/accounts/me` | JWT | Lê a conta do actor autenticado (alias) |
 | GET | `/v1/accounts/:id` | admin ou próprio account | Lê account |
 | PATCH | `/v1/accounts/:id` | admin ou próprio account | Atualiza email/senha |
 | DELETE | `/v1/accounts/:id` | admin | Soft delete (seta deletedAt) |

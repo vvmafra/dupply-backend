@@ -41,6 +41,31 @@ export async function registerAccountRoutes(
   const api = app.withTypeProvider<ZodTypeProvider>();
 
   api.get(
+    "/v1/accounts/me",
+    {
+      schema: {
+        tags: ["Accounts"],
+        summary: "Buscar conta autenticada (alias /me)",
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    async (request, reply) => {
+      if (!request.auth) return reply.code(401).send({ error: "unauthorized" });
+      try {
+        const actor = {
+          sub: request.auth.sub,
+          role: request.auth.role as AccountRole,
+        };
+        return await executeGetAccount(deps, actor, request.auth.sub);
+      } catch (e) {
+        const mapped = mapAccountError(e, reply);
+        if (mapped) return mapped;
+        throw e;
+      }
+    },
+  );
+
+  api.get(
     "/v1/accounts/:id",
     {
       schema: {

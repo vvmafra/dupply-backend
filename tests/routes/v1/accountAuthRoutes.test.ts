@@ -203,6 +203,174 @@ test("POST /v1/auth/login maps auth errors to HTTP status", async () => {
   }
 });
 
+test("GET /v1/accounts/me returns account for authenticated owner", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { id, email } = await insertAccount(deps);
+
+    const loginRes = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: { email, password: TEST_PASSWORD },
+    });
+    const { accessToken } = loginRes.json() as { accessToken: string };
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/v1/accounts/me",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(res.statusCode, 200);
+    const account = res.json() as {
+      id: string;
+      email: string;
+      role: string;
+      status: string;
+      createdAt: string;
+      updatedAt: string;
+    };
+    assert.equal(account.id, id);
+    assert.equal(account.email, email);
+    assert.equal(account.role, "seller");
+    assert.equal(account.status, "active");
+    assert.ok(account.createdAt);
+    assert.ok(account.updatedAt);
+    assert.ok(!("passwordHash" in account));
+    assert.ok(!("refreshToken" in account));
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("GET /v1/accounts/me returns 401 when unauthenticated", async () => {
+  const { app, handle } = await createTestApp();
+  try {
+    const res = await app.inject({
+      method: "GET",
+      url: "/v1/accounts/me",
+    });
+    assert.equal(res.statusCode, 401);
+    assert.deepEqual(res.json(), { error: "unauthorized" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("GET /v1/accounts/me response matches GET /v1/accounts/:id", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { id, email } = await insertAccount(deps);
+
+    const loginRes = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: { email, password: TEST_PASSWORD },
+    });
+    const { accessToken } = loginRes.json() as { accessToken: string };
+    const headers = { authorization: `Bearer ${accessToken}` };
+
+    const meRes = await app.inject({
+      method: "GET",
+      url: "/v1/accounts/me",
+      headers,
+    });
+    const byIdRes = await app.inject({
+      method: "GET",
+      url: `/v1/accounts/${id}`,
+      headers,
+    });
+
+    assert.equal(meRes.statusCode, byIdRes.statusCode);
+    assert.deepEqual(meRes.json(), byIdRes.json());
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("GET /v1/accounts/me returns 404 for soft-deleted account", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { id, email } = await insertAccount(deps);
+    const adminId = createId();
+    const adminEmail = `admin-${adminId}@example.com`;
+    await insertAccount(deps, { id: adminId, email: adminEmail, role: "admin" });
+
+    const loginRes = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: { email, password: TEST_PASSWORD },
+    });
+    const { accessToken } = loginRes.json() as { accessToken: string };
+
+    const adminLoginRes = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: { email: adminEmail, password: TEST_PASSWORD },
+    });
+    const adminToken = (adminLoginRes.json() as { accessToken: string }).accessToken;
+
+    const deleteRes = await app.inject({
+      method: "DELETE",
+      url: `/v1/accounts/${id}`,
+      headers: { authorization: `Bearer ${adminToken}` },
+    });
+    assert.equal(deleteRes.statusCode, 204);
+
+    const meRes = await app.inject({
+      method: "GET",
+      url: "/v1/accounts/me",
+      headers: { authorization: `Bearer ${accessToken}` },
+    });
+    assert.equal(meRes.statusCode, 404);
+    assert.deepEqual(meRes.json(), { error: "account_not_found" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("GET /v1/accounts/me returns 401 for invalid or expired token", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { id, sellerId } = await insertAccount(deps);
+    assert.ok(sellerId);
+
+    const invalidRes = await app.inject({
+      method: "GET",
+      url: "/v1/accounts/me",
+      headers: { authorization: "Bearer not-a-valid-jwt" },
+    });
+    assert.equal(invalidRes.statusCode, 401);
+    assert.deepEqual(invalidRes.json(), { error: "unauthorized" });
+
+    const secret = new TextEncoder().encode(deps.config.JWT_SECRET);
+    const expiredToken = await new jose.SignJWT({
+      role: "seller",
+      profileId: sellerId,
+    })
+      .setProtectedHeader({ alg: "HS256" })
+      .setSubject(id)
+      .setIssuer(deps.config.JWT_ISSUER)
+      .setIssuedAt(Math.floor(Date.now() / 1000) - 3600)
+      .setExpirationTime(Math.floor(Date.now() / 1000) - 1800)
+      .sign(secret);
+
+    const expiredRes = await app.inject({
+      method: "GET",
+      url: "/v1/accounts/me",
+      headers: { authorization: `Bearer ${expiredToken}` },
+    });
+    assert.equal(expiredRes.statusCode, 401);
+    assert.deepEqual(expiredRes.json(), { error: "unauthorized" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
 test("GET /v1/accounts/:id returns 403 for non-owner non-admin", async () => {
   const { app, deps, handle } = await createTestApp();
   try {

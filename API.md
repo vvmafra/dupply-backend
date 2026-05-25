@@ -45,6 +45,7 @@ npm run dev
   - `POST /v1/auth/refresh` — `{ "refreshToken" }`; same response shape as login (refresh token rotated).
   - `POST /v1/auth/logout` — Bearer JWT; invalidates stored refresh token (`204`).
 - **Accounts** (`Authorization: Bearer <accessToken>`):
+  - `GET /v1/accounts/me` — authenticated alias for the caller's own account; same response as `GET /v1/accounts/:id` when `:id` equals JWT `sub` (excludes password hash and refresh token).
   - `GET /v1/accounts/:id` — account profile (owner or admin; excludes password hash and refresh token).
   - `PATCH /v1/accounts/:id` — `{ "password" }`; owner or admin (`204`).
   - `DELETE /v1/accounts/:id` — admin soft-delete (`204`).
