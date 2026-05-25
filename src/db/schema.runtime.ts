@@ -11,6 +11,11 @@ const mod = isPostgresDatabaseUrl(url) ? pg : sqlite;
 
 export const accounts = mod.accounts;
 export const sellers = mod.sellers;
+export const wallets = mod.wallets;
+export const WALLET_STATUSES = mod.WALLET_STATUSES;
+export const WALLET_NETWORKS = mod.WALLET_NETWORKS;
+export const WALLET_TYPES = mod.WALLET_TYPES;
+export const WALLET_PARENT_TYPES = mod.WALLET_PARENT_TYPES;
 export const payers = mod.payers;
 export const receivables = mod.receivables;
 export const rampQuotes = mod.rampQuotes;

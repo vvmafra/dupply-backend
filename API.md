@@ -55,6 +55,11 @@ npm run dev
   - `POST /v1/sellers/:id/submit` — seller (own); validates completeness and transitions to `in_review` (`204`).
   - `PATCH /v1/sellers/:id/status` — admin; body `{ "status": "active" | "inactive" }` (`204`).
   - `DELETE /v1/sellers/:id` — admin soft-delete (`204`).
+- **Wallets** (`Authorization: Bearer <accessToken>`):
+  - `POST /v1/sellers/:id/wallet` — seller (own); body `{ "contractId", "credentialId", "signerPublicKey", "network": "testnet" | "mainnet", "createdTxHash"? }`; registers smart account after frontend SDK creation; returns `201` with wallet view (no `secretEncrypted`).
+  - `GET /v1/sellers/:id/wallet` — seller (own) or admin; returns wallet view or `404 wallet_not_found` when `seller.walletId` is null.
+  - `GET /v1/wallets/:id` — seller (own wallet) or admin.
+  - `PATCH /v1/wallets/:id/status` — admin; body `{ "status": "active" | "inactive" }`.
 - **Receivables** (`Authorization: Bearer <accessToken>`):
   - `GET /v1/receivables` — list (seller: own; payer: own; admin / risk / risk_analyst_agent: up to 200 rows).
   - `GET /v1/receivables/:id` — detail if caller may view.

@@ -29,8 +29,4 @@ export async function executeTransitionSellerStatus(
     .update(sellers)
     .set({ status: input.targetStatus, updatedAt: new Date() })
     .where(eq(sellers.id, input.sellerId));
-
-  if (from === "in_review" && input.targetStatus === "active") {
-    // @todo(wallet-module): create wallet and SET wallet_id = <walletId>
-  }
 }

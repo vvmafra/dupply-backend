@@ -114,6 +114,50 @@ export const sellers = pgTable(
   ],
 );
 
+export const WALLET_STATUSES = ["active", "inactive"] as const;
+export const WALLET_NETWORKS = ["testnet", "mainnet"] as const;
+export const WALLET_TYPES = ["smart_account", "classic_wallet"] as const;
+export const WALLET_PARENT_TYPES = ["seller", "platform"] as const;
+
+export const wallets = pgTable(
+  "wallets",
+  {
+    id: text("id").primaryKey(),
+    status: text("status").notNull().default("active"),
+    network: text("network").notNull(),
+    address: text("address").notNull(),
+    type: text("type").notNull(),
+    credentialId: text("credential_id"),
+    secretEncrypted: text("secret_encrypted"),
+    signerPublicKey: text("signer_public_key").notNull(),
+    createdTxHash: text("created_tx_hash"),
+    parentType: text("parent_type").notNull(),
+    sellerId: text("seller_id").references(() => sellers.id),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    check("wallets_status_check", sql`${t.status} IN ('active', 'inactive')`),
+    check("wallets_network_check", sql`${t.network} IN ('testnet', 'mainnet')`),
+    check(
+      "wallets_type_check",
+      sql`${t.type} IN ('smart_account', 'classic_wallet')`,
+    ),
+    check(
+      "wallets_parent_type_check",
+      sql`${t.parentType} IN ('seller', 'platform')`,
+    ),
+    index("wallets_seller_id_idx").on(t.sellerId),
+    index("wallets_address_network_idx").on(t.address, t.network),
+    uniqueIndex("wallets_seller_network_active_unique")
+      .on(t.sellerId, t.network)
+      .where(
+        sql`${t.status} = 'active' AND ${t.parentType} = 'seller' AND ${t.deletedAt} IS NULL`,
+      ),
+  ],
+);
+
 export const payers = pgTable("payers", {
   id: text("id").primaryKey(),
   status: text("status").notNull().default("active"),

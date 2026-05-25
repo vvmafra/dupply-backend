@@ -50,6 +50,13 @@
       "when": 1779600000000,
       "tag": "0006_receivables_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1779700000000,
+      "tag": "0007_wallets",
+      "breakpoints": true
     }
   ]
 }

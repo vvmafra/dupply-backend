@@ -1,12 +1,43 @@
 ---
-description: Módulo wallet — carteiras Stellar (classic wallet e smart account), vínculo com seller e plataforma
+description: Módulo wallet — smart account Stellar via passkey (WebAuthn), vínculo com seller e plataforma
 globs: src/routes/v1/wallets*,src/domain/wallet/**,src/application/wallet/**,src/integrations/stellar/**
 alwaysApply: false
 ---
 
 # Módulo 2 — wallet
 
-Carteiras Stellar usadas pela plataforma e pelos sellers para operações on-chain (emissão de trade bills, liquidações). Parte do módulo 2 (construída junto com seller).
+Carteiras Stellar usadas pela plataforma e pelos sellers. Sellers usam **exclusivamente** `smart_account` — carteiras Soroban gerenciadas por passkey WebAuthn via `smart-account-kit` SDK (frontend). A plataforma usa `classic_wallet` para operações internas (emissão, liquidações).
+
+---
+
+## Como funciona — visão geral
+
+O `smart-account-kit` roda no **frontend (browser)**. O backend nunca toca em chave privada.
+
+### Fluxo de criação (primeiro login após aprovação)
+
+```
+1. Seller faz login → status = 'active', mas seller.walletId == null
+2. Frontend detecta walletId nulo → inicia criação de wallet
+3. SDK chama kit.createWallet(appName, userEmail, { relayerUrl, autoSubmit: true })
+4. Browser abre prompt nativo de passkey (WebAuthn) → usuário confirma com biometria/PIN
+5. SDK faz deploy do smart contract Soroban e retorna { contractId, credentialId }
+6. Frontend chama POST /v1/sellers/:id/wallet com { contractId, credentialId, network }
+7. Backend salva wallet e atualiza seller.walletId
+```
+
+### Fluxo de uso (logins subsequentes)
+
+```
+1. Seller faz login → seller.walletId != null → wallet já configurada
+2. Frontend instancia SDK com credentialId salvo → kit.connectWallet({ credentialId })
+3. SDK restaura sessão local (IndexedDB) ou pede passkey novamente
+4. Qualquer operação on-chain (ex: emitir receivable) usa kit.signAndSubmit() ou kit.executeAndSubmit()
+```
+
+### Relayer (fee sponsoring)
+
+A plataforma opera um endpoint relayer (serviço separado). O SDK aponta `relayerUrl` para esse endpoint. O relayer recebe a transação, assina com a conta Stellar da plataforma (pagando a fee em XLM), e submete à rede. O seller nunca precisa ter XLM. O relayer **não é parte deste módulo** — é infra separada, implementada posteriormente.
 
 ---
 
@@ -17,55 +48,100 @@ export const wallets = pgTable("wallets", {
   id:               text("id").primaryKey(),                      // cuid2
   status:           text("status").notNull().default("active"),   // active | inactive
   network:          text("network").notNull(),                    // testnet | mainnet
-  address:          text("address").notNull(),                    // Stellar public key (G...)
-  type:             text("type").notNull(),                       // classic_wallet | smart_account
-  credentialId:     text("credential_id"),                       // obrigatório se type=smart_account
-  secretEncrypted:  text("secret_encrypted"),                    // obrigatório se type=classic_wallet
-  signerPublicKey:  text("signer_public_key").notNull(),
-  createdTxHash:    text("created_tx_hash"),                     // hash da tx que criou a conta on-chain
+  address:          text("address").notNull(),                    // contractId retornado pelo SDK (C... Soroban)
+  type:             text("type").notNull(),                       // smart_account | classic_wallet
+  credentialId:     text("credential_id"),                       // obrigatório se type=smart_account — ID público da passkey WebAuthn
+  secretEncrypted:  text("secret_encrypted"),                    // obrigatório se type=classic_wallet (platform wallets)
+  signerPublicKey:  text("signer_public_key").notNull(),          // chave pública WebAuthn do signer (vem do SDK)
+  createdTxHash:    text("created_tx_hash"),                     // hash da tx de deploy on-chain
   parentType:       text("parent_type").notNull(),               // seller | platform
   sellerId:         text("seller_id").references(() => sellers.id), // nullable se parentType=platform
   createdAt:        timestamp("created_at").notNull().defaultNow(),
   updatedAt:        timestamp("updated_at").notNull().defaultNow(),
-  deletedAt:        timestamp("deleted_at"),                     // presente mas não ativado em v1
+  deletedAt:        timestamp("deleted_at"),
 });
 ```
+
+### Campos vindos do SDK após createWallet()
+
+`CreateWalletResult` (interface do SDK):
+```typescript
+{
+  credentialId: string,       // base64url — ID da passkey
+  publicKey: Uint8Array,      // 65-byte secp256r1 uncompressed — o signerPublicKey
+  contractId: string,         // endereço C... da smart account Soroban
+  signedTransaction: string,  // XDR da tx de deploy — não precisamos guardar
+}
+```
+
+| Campo SDK | Campo no banco | Observação |
+|---|---|---|
+| `contractId` | `address` | Endereço `C...` do smart contract Soroban |
+| `credentialId` | `credentialId` | Identificador público da passkey — não é segredo, mas não logar |
+| `publicKey` (Uint8Array) | `signerPublicKey` | Frontend converte para hex string antes de enviar |
+| `network` | `network` | Enviado pelo frontend junto com o request (não vem do SDK) |
+| `createdTxHash` | `createdTxHash` | Hash da tx de deploy — frontend obtém após submit, opcional |
 
 ---
 
 ## Regras de negócio
 
-### Invariantes por tipo
-- `type = 'classic_wallet'` → `secretEncrypted` **obrigatório**, `credentialId` deve ser null.
-- `type = 'smart_account'` → `credentialId` **obrigatório**, `secretEncrypted` deve ser null.
-- Validação deve ocorrer na camada de aplicação (não apenas banco).
+### Sellers — sempre smart_account
 
-### Invariantes por parentType
-- `parentType = 'seller'` → `sellerId` **obrigatório** (FK para sellers).
-- `parentType = 'platform'` → `sellerId` deve ser null.
+- `parentType = 'seller'` → `type` **deve ser** `'smart_account'`.
+- `credentialId` e `signerPublicKey` **obrigatórios** para `smart_account` — ambos retornados pelo SDK.
+- `secretEncrypted` **deve ser null** para `smart_account` — nunca guardamos segredo de wallet de seller.
+- O backend **não cria a wallet on-chain** — apenas registra os dados retornados pelo SDK do frontend.
+- Um seller pode ter no máximo **uma wallet `status = 'active'` por network**.
 
-### Network
-- `network = 'testnet'` ou `'mainnet'` — seller de testnet é um account distinto de seller de mainnet. Não há migração de testnet para mainnet via troca de wallet.
+### Platform — sempre classic_wallet
 
-### Soft delete em v1
-- Campo `deletedAt` existe no schema mas **não é utilizado em v1**.
-- Wallets não são deletadas — somente desativadas via `status = 'inactive'`.
-- Documentar explicitamente se/quando soft delete for ativado.
+- `parentType = 'platform'` → `type` **deve ser** `'classic_wallet'`.
+- `secretEncrypted` **obrigatório** para `classic_wallet` (chave privada da conta Stellar da plataforma, criptografada).
+- `credentialId` **deve ser null**.
+- `sellerId` **deve ser null**.
+
+### Detecção de "wallet ainda não criada"
+
+- A ausência de wallet do seller é detectada via `seller.walletId == null`.
+- Não há status intermediário no seller para esse estado — é responsabilidade do frontend verificar e iniciar o fluxo de criação.
+- Um seller `status = 'active'` com `walletId == null` é um estado válido e transitório (seller aprovado, ainda não criou passkey).
+
+### Invariantes gerais
+
+- `parentType = 'seller'` → `sellerId` **obrigatório**.
+- `parentType = 'platform'` → `sellerId` **deve ser null**.
+- `network = 'testnet'` ou `'mainnet'` — seller de testnet é distinto de mainnet (não há migração via troca de wallet).
+- Wallets não são deletadas — somente desativadas via `status = 'inactive'`. `deletedAt` existe no schema mas não é usado em v1.
 
 ### Segurança
-- `secretEncrypted` nunca deve ser exposto em responses de API — excluir do schema de resposta.
-- `credentialId` é referência a um credential externo (passkey/HSM); não é segredo, mas deve ser tratado com cuidado nos logs.
+
+- `secretEncrypted` nunca exposto em responses de API.
+- `credentialId` não é segredo, mas não deve aparecer em logs.
+- O `address` (`contractId`) é público — pode ser exposto normalmente.
 
 ---
 
-## Rotas planejadas
+## Rotas
 
 | Método | Rota | Actor | Descrição |
 |---|---|---|---|
-| POST | `/v1/wallets` | sistema / admin | Cria wallet (geralmente chamado internamente ao criar seller) |
-| GET | `/v1/wallets/:id` | seller (própria) ou admin | Lê wallet (sem expor secretEncrypted) |
+| POST | `/v1/sellers/:id/wallet` | seller (próprio) | Registra wallet após criação pelo SDK no frontend |
+| GET | `/v1/sellers/:id/wallet` | seller (próprio) ou admin | Retorna wallet do seller (sem secretEncrypted) |
 | PATCH | `/v1/wallets/:id/status` | admin | Ativa/desativa wallet |
-| GET | `/v1/sellers/:id/wallet` | seller (própria) ou admin | Shortcut para wallet do seller |
+| GET | `/v1/wallets/:id` | seller (própria) ou admin | Lê wallet por ID |
+
+### Payload de POST /v1/sellers/:id/wallet
+
+```typescript
+{
+  contractId: string,      // C... — endereço da smart account Soroban
+  credentialId: string,    // ID da passkey (base64url) retornado pelo SDK
+  signerPublicKey: string, // publicKey do SDK convertido para hex pelo frontend
+  network: "testnet" | "mainnet",
+  createdTxHash?: string,  // hash da tx de deploy (opcional)
+}
+```
 
 > Soft delete de wallet **não exposto como rota em v1**.
 
@@ -73,5 +149,13 @@ export const wallets = pgTable("wallets", {
 
 ## Dependências
 
-- **Módulo 2** (seller) — `sellerId` FK quando `parentType = 'seller'`.
-- Integração Stellar RPC para operações on-chain (não é dependência de schema, mas é dependência operacional).
+- **Módulo 2** (seller) — `sellerId` FK e `seller.walletId` atualizado após registro.
+- **`smart-account-kit`** (npm) — SDK frontend, não é dependência do backend diretamente.
+- **Relayer** — serviço externo operado pela plataforma, `relayerUrl` é config por environment. Implementado em iteração futura; não bloqueia este módulo.
+- **Indexer Stellar** — usado pelo SDK para reverse lookup. Já hospedado pela SDF para testnet/mainnet.
+
+## Notas futuras
+
+- **Relayer:** quando implementado, adicionar `RELAYER_URL` em `config.ts` + `.env.example`. Config única por environment, sem variação por seller.
+- **Multi-device recovery:** se o usuário perder o dispositivo, o fluxo de recuperação de passkey (via iCloud Keychain sync, Google Password Manager, ou adição de segundo signer) deverá ser especificado separadamente.
+- **Platform wallets** (`type = 'classic_wallet'`, `parentType = 'platform'`): schema já suporta, mas criação e uso são out of scope em v1.

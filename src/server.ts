@@ -9,6 +9,7 @@ import { requireDupplyApiKey } from "./plugins/dupply-auth.js";
 import { registerAccountRoutes } from "./routes/v1/accounts.js";
 import { registerAuthRoutes } from "./routes/v1/auth.js";
 import { registerSellerRoutes } from "./routes/v1/sellers.js";
+import { registerWalletRoutes } from "./routes/v1/wallets.js";
 import { registerPayerRoutes } from "./routes/v1/payers.js";
 import { registerReceivableInternalRoutes } from "./routes/v1/receivable-internal.js";
 import { registerReceivableRoutes } from "./routes/v1/receivables.js";
@@ -65,6 +66,7 @@ async function main(): Promise<void> {
       scope.addHook("preHandler", requireJwt(config));
       await registerAccountRoutes(scope, appDeps);
       await registerSellerRoutes(scope, appDeps);
+      await registerWalletRoutes(scope, appDeps);
       await registerReceivableRoutes(scope, appDeps);
     },
     { prefix: "" },
