@@ -9,6 +9,7 @@ import { requireDupplyApiKey } from "./plugins/dupply-auth.js";
 import { registerAccountRoutes } from "./routes/v1/accounts.js";
 import { registerAuthRoutes } from "./routes/v1/auth.js";
 import { registerSellerRoutes } from "./routes/v1/sellers.js";
+import { registerPayerRoutes } from "./routes/v1/payers.js";
 import { registerReceivableInternalRoutes } from "./routes/v1/receivable-internal.js";
 import { registerReceivableRoutes } from "./routes/v1/receivables.js";
 import { registerTradeBillRoutes } from "./routes/v1/trade-bills.js";
@@ -56,6 +57,7 @@ async function main(): Promise<void> {
 
   await app.register(async (scope) => {
     await registerAuthRoutes(scope, appDeps);
+    await registerPayerRoutes(scope, appDeps);
   });
 
   await app.register(

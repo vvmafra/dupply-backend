@@ -33,26 +33,6 @@ export const accounts = pgTable(
   ],
 );
 
-export const receivables = pgTable(
-  "receivables",
-  {
-    id: text("id").primaryKey(),
-    sellerUserId: text("seller_user_id").notNull(),
-    payerUserId: text("payer_user_id").notNull(),
-    status: text("status").notNull(),
-    value: text("value").notNull(),
-    proposedValue: text("proposed_value"),
-    receivableMd: text("receivable_md"),
-    createdAtMs: text("created_at_ms").notNull(),
-    updatedAtMs: text("updated_at_ms").notNull(),
-  },
-  (t) => [
-    index("receivables_seller_user_id_idx").on(t.sellerUserId),
-    index("receivables_payer_user_id_idx").on(t.payerUserId),
-    index("receivables_status_idx").on(t.status),
-  ],
-);
-
 export const rampQuotes = pgTable(
   "ramp_quotes",
   {
@@ -131,6 +111,38 @@ export const sellers = pgTable(
     ),
     index("sellers_status_idx").on(t.status),
     index("sellers_account_id_idx").on(t.accountId),
+  ],
+);
+
+export const payers = pgTable("payers", {
+  id: text("id").primaryKey(),
+  status: text("status").notNull().default("active"),
+  legalName: text("legal_name").notNull(),
+  email: text("email").notNull(),
+  cnpj: text("cnpj").notNull().unique(),
+  createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true }),
+});
+
+export const receivables = pgTable(
+  "receivables",
+  {
+    id: text("id").primaryKey(),
+    status: text("status").notNull(),
+    sellerId: text("seller_id").notNull().references(() => sellers.id),
+    payerId: text("payer_id").notNull().references(() => payers.id),
+    receivableMetaData: text("receivable_meta_data"),
+    value: text("value").notNull(),
+    proposedValue: text("proposed_value"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("receivables_seller_id_idx").on(t.sellerId),
+    index("receivables_payer_id_idx").on(t.payerId),
+    index("receivables_status_idx").on(t.status),
   ],
 );
 

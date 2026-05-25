@@ -8,13 +8,18 @@ import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod
 
 import { loadConfig } from "../../../src/config.js";
 import { createDb, runMigrations, type DbHandle } from "../../../src/db/index.js";
-import { sellers } from "../../../src/db/schema.runtime.js";
+import { receivables } from "../../../src/db/schema.runtime.js";
 import type { AccountRole } from "../../../src/domain/account/types.js";
 import { signAccessToken } from "../../../src/lib/jwt.js";
 import { requireJwt } from "../../../src/plugins/jwt-auth.js";
 import { registerAuthRoutes } from "../../../src/routes/v1/auth.js";
 import { registerReceivableRoutes } from "../../../src/routes/v1/receivables.js";
 import type { AppDeps } from "../../../src/application/deps.js";
+import {
+  completeReceivableMetaData,
+  PAYER_CNPJ,
+  setupActiveSeller,
+} from "../../helpers/receivableTestHelpers.js";
 import { insertAccount, TEST_PASSWORD } from "../../helpers/sellerTestHelpers.js";
 
 type TestApp = {
@@ -73,13 +78,6 @@ async function signToken(
   return signAccessToken(config, { sub, role, profileId });
 }
 
-async function activateSeller(deps: AppDeps, sellerId: string): Promise<void> {
-  await deps.db
-    .update(sellers)
-    .set({ status: "active", updatedAt: new Date() })
-    .where(eq(sellers.id, sellerId));
-}
-
 test("POST /v1/receivables with admin token returns 403", async () => {
   const { app, deps, handle, config } = await createTestApp();
   try {
@@ -91,8 +89,10 @@ test("POST /v1/receivables with admin token returns 403", async () => {
       url: "/v1/receivables",
       headers: { authorization: `Bearer ${token}` },
       payload: {
-        payerUserId: randomUUID(),
-        value: "1000.00",
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: "50000",
       },
     });
     assert.equal(res.statusCode, 403);
@@ -103,12 +103,10 @@ test("POST /v1/receivables with admin token returns 403", async () => {
   }
 });
 
-test("POST /v1/receivables with seller token returns 201", async () => {
+test("POST /v1/receivables with seller token returns 201 draft", async () => {
   const { app, deps, handle } = await createTestApp();
   try {
-    const { id: accountId, email, sellerId } = await insertAccount(deps);
-    assert.ok(sellerId);
-    await activateSeller(deps, sellerId);
+    const { email, sellerId } = await setupActiveSeller(deps);
     const token = await loginAs(app, email);
 
     const res = await app.inject({
@@ -116,13 +114,90 @@ test("POST /v1/receivables with seller token returns 201", async () => {
       url: "/v1/receivables",
       headers: { authorization: `Bearer ${token}` },
       payload: {
-        payerUserId: randomUUID(),
-        value: "1000.00",
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: "50000",
       },
     });
     assert.equal(res.statusCode, 201);
-    assert.ok((res.json() as { id: string }).id);
-    void accountId;
+    const { id } = res.json() as { id: string };
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.status, "created");
+    assert.equal(row?.sellerId, sellerId);
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables inactive seller returns 403 seller_not_active", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await insertAccount(deps);
+    const token = await loginAs(app, email);
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+      },
+    });
+    assert.equal(res.statusCode, 403);
+    assert.deepEqual(res.json(), { error: "seller_not_active" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/:id/confirm returns 404 (removed)", async () => {
+  const { app, handle } = await createTestApp();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: `/v1/receivables/${randomUUID()}/confirm`,
+    });
+    assert.equal(res.statusCode, 404);
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("GET /v1/receivables as seller returns only own receivables", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const sellerA = await setupActiveSeller(deps);
+    const sellerB = await setupActiveSeller(deps);
+    const tokenA = await loginAs(app, sellerA.email);
+
+    for (const seller of [sellerA, sellerB]) {
+      const token = await loginAs(app, seller.email);
+      await app.inject({
+        method: "POST",
+        url: "/v1/receivables",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          payerCnpj: PAYER_CNPJ,
+          payerLegalName: "Payer Corp",
+          payerFinancialEmail: "finance@payer.com",
+        },
+      });
+    }
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as { receivables: { sellerId: string }[] };
+    assert.equal(body.receivables.length, 1);
+    assert.equal(body.receivables[0]?.sellerId, sellerA.sellerId);
   } finally {
     await app.close();
     await handle.close();
@@ -132,11 +207,8 @@ test("POST /v1/receivables with seller token returns 201", async () => {
 test("POST /v1/receivables/:id/risk-decision with seller token returns 403", async () => {
   const { app, deps, handle } = await createTestApp();
   try {
-    const { email, sellerId } = await insertAccount(deps);
-    assert.ok(sellerId);
-    await activateSeller(deps, sellerId);
+    const { email } = await setupActiveSeller(deps);
     const token = await loginAs(app, email);
-
     const res = await app.inject({
       method: "POST",
       url: `/v1/receivables/${randomUUID()}/risk-decision`,
@@ -151,58 +223,40 @@ test("POST /v1/receivables/:id/risk-decision with seller token returns 403", asy
   }
 });
 
-test("POST /v1/receivables/:id/risk-decision with risk_analyst token returns 404 for missing receivable", async () => {
+test("full draft flow patch and submit", async () => {
   const { app, deps, handle } = await createTestApp();
   try {
-    const { email } = await insertAccount(deps, { role: "risk_analyst" });
+    const { email } = await setupActiveSeller(deps);
     const token = await loginAs(app, email);
 
-    const res = await app.inject({
+    const createRes = await app.inject({
       method: "POST",
-      url: `/v1/receivables/${randomUUID()}/risk-decision`,
+      url: "/v1/receivables",
       headers: { authorization: `Bearer ${token}` },
-      payload: { decision: "reject" },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+      },
     });
-    assert.equal(res.statusCode, 404);
-  } finally {
-    await app.close();
-    await handle.close();
-  }
-});
+    const { id } = createRes.json() as { id: string };
 
-test("POST /v1/receivables/:id/confirm with seller token returns 403", async () => {
-  const { app, deps, handle } = await createTestApp();
-  try {
-    const { email, sellerId } = await insertAccount(deps);
-    assert.ok(sellerId);
-    await activateSeller(deps, sellerId);
-    const token = await loginAs(app, email);
-
-    const res = await app.inject({
-      method: "POST",
-      url: `/v1/receivables/${randomUUID()}/confirm`,
+    const patchRes = await app.inject({
+      method: "PATCH",
+      url: `/v1/receivables/${id}`,
       headers: { authorization: `Bearer ${token}` },
+      payload: { receivableMetaData: completeReceivableMetaData, value: "50000" },
     });
-    assert.equal(res.statusCode, 403);
-    assert.deepEqual(res.json(), { error: "forbidden" });
-  } finally {
-    await app.close();
-    await handle.close();
-  }
-});
+    assert.equal(patchRes.statusCode, 200);
 
-test("POST /v1/receivables/:id/confirm with payer token returns 404 for missing receivable", async () => {
-  const { app, handle, config } = await createTestApp();
-  try {
-    const payerId = randomUUID();
-    const token = await signToken(config, payerId, "payer");
-
-    const res = await app.inject({
+    const submitRes = await app.inject({
       method: "POST",
-      url: `/v1/receivables/${randomUUID()}/confirm`,
+      url: `/v1/receivables/${id}/submit`,
       headers: { authorization: `Bearer ${token}` },
     });
-    assert.equal(res.statusCode, 404);
+    assert.equal(submitRes.statusCode, 200);
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.status, "under_review");
   } finally {
     await app.close();
     await handle.close();

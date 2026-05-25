@@ -43,6 +43,13 @@
       "when": 1779500000000,
       "tag": "0005_sellers",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1779600000000,
+      "tag": "0006_receivables_v2",
+      "breakpoints": true
     }
   ]
 }

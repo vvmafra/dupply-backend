@@ -122,7 +122,7 @@ Cada módulo tem seu `.mdc` dedicado:
 - `module-wallet.mdc` — carteiras Stellar (classic + smart account)
 - `module-payer.mdc` — sacado, magic link
 - `module-risk-analyst.mdc` — analista e admin
-- `module-receivable.mdc` / `receivable-workflows.mdc` — duplicata, status machine, RBAC
+- `module-receivables.mdc` — duplicata, status machine completa, receivableMetaData, RBAC
 - `module-documents.mdc` — documentos polimórficos
 - `module-registry.mdc` — registro on-chain (Soroban)
 - `module-ramp.mdc` — quotes e orders Etherfuse

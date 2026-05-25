@@ -1,0 +1,213 @@
+---
+description: Módulo receivable — schema, receivableMetaData, status machine, RBAC, invariants e guard assertReceivableTransition
+globs: src/routes/v1/receivables*,src/routes/v1/receivable-internal*,src/domain/receivable/**,src/application/receivable/**
+alwaysApply: false
+---
+
+# Módulo 5 — receivable
+
+A **duplicata** (receivable) é o ativo financeiro central da plataforma. Representa um título de crédito que um seller deseja antecipar. Toda a operação de antecipação gira em torno do ciclo de vida do receivable.
+
+---
+
+## Schema
+
+```typescript
+export const receivables = pgTable("receivables", {
+  id:                 text("id").primaryKey(),                     // cuid2
+  status:             text("status").notNull(),
+  sellerId:           text("seller_id").notNull().references(() => sellers.id),
+  payerId:            text("payer_id").notNull().references(() => payers.id),
+  receivableMetaData: text("receivable_meta_data"),                // JSON — dados do formulário (ver seção abaixo)
+  value:              text("value").notNull(),                     // valor de face — text decimal, centavos BRL
+  proposedValue:      text("proposed_value"),                      // valor proposto pelo risk_analyst — centavos BRL; preenchido ao entrar em offer
+  createdAt:          timestamp("created_at").notNull().defaultNow(),
+  updatedAt:          timestamp("updated_at").notNull().defaultNow(),
+  deletedAt:          timestamp("deleted_at"),
+});
+```
+
+- `value` e `proposedValue` em `text` decimal — evita imprecisão de ponto flutuante. Ver `money.mdc`.
+- FK para `sellers` e `payers`. Payer é identificado/criado por CNPJ no momento do submit (upsert — ver `module-payer.mdc`).
+
+---
+
+## receivableMetaData — expected structure
+
+All form data filled by the seller lives in this JSON.
+Documents (fiscal PDF/XML, proof of delivery) are saved in `documents` (`parentType = 'receivable'`) via Module 6 — **not** embedded here.
+
+```typescript
+type ReceivableMetaData = {
+  type: "commercial" | "service";
+  billNumber: string;                                              // número da duplicata
+  invoiceNumber: string;                                           // número da fatura
+  issuedAt: string;                                                // ISO 8601 (YYYY-MM-DD)
+  dueDate: string;                                                 // ISO 8601 (YYYY-MM-DD) — título due date
+  payerCnpj: string;                                               // 14 digits, no formatting
+  payerLegalName: string;
+  payerFinancialEmail: string;
+  fiscalDocumentType: "nfe" | "nfce" | "nfse" | "other";          // NF-e, NFC-e, NFS-e are Brazilian fiscal acronyms — kept as-is
+  fiscalDocumentKey: string;                                       // access key or document number
+  proofType: "delivery" | "acceptance" | "service_provision";
+  payerAcceptanceStatus: "accepted" | "pending" | "refused";       // payer acceptance status at time of submission
+  desiredAnticipationValue: number;                                // centavos BRL — seller's requested advance amount
+  antifraudDeclarationsAccepted: boolean;
+};
+```
+
+> **Note:** document attachments (fiscal file, proof) are not fields in the metadata — their presence is verified by records in `documents` (Module 6).
+
+---
+
+## Status machine
+
+```
+created ──► under_review ──► reproved             (terminal — analista recusou)
+                        │
+                        └──► offer ──► rejected    (terminal — seller recusou proposta)
+                                   │
+                                   └──► approved ──► payer_rejected  (terminal — payer recusou via magic link)
+                                                 │
+                                                 └──► confirmed ──► processing ──► completed ──► payer_settled  (terminal)
+                                                                                               │
+                                                                                               └──► overdue ──► payer_settled  (pago em atraso — terminal)
+```
+
+| Status | Quem dispara | Descrição |
+|---|---|---|
+| `created` | `seller` | Seller iniciou o formulário (draft — pode editar livremente) |
+| `under_review` | `seller` | Seller submeteu para análise; aguarda decisão do risk_analyst |
+| `reproved` | `risk_analyst` / `risk_analyst_agent` | Analista recusou a duplicata. **Terminal.** |
+| `offer` | `risk_analyst` / `risk_analyst_agent` | Analista fez proposta de valor (`proposedValue` preenchido) |
+| `rejected` | `seller` | Seller recusou a proposta do analista. **Terminal.** |
+| `approved` | `seller` | Seller aceitou a proposta; sistema envia magic link ao payer |
+| `payer_rejected` | `payer` (magic link) | Payer recusou via magic link. **Terminal.** |
+| `confirmed` | `payer` (magic link) | Payer aceitou via magic link; pronto para liquidação |
+| `processing` | sistema | Plataforma está transferindo o valor antecipado ao seller |
+| `completed` | sistema | Seller recebeu o valor antecipado. Plataforma aguarda pagamento do payer no vencimento. |
+| `payer_settled` | sistema | Payer pagou a plataforma. Ciclo 100% concluído. **Terminal.** |
+| `overdue` | sistema | Payer não pagou no vencimento. Acionar cobrança. Pode avançar para `payer_settled` se pagar em atraso. |
+
+### Detalhes importantes
+
+**`created`** — status inicial criado no POST. Seller pode editar `receivableMetaData` e `value` livremente. A transição para `under_review` ocorre via rota explícita de submit (formulário completo e válido).
+
+**`reproved` vs `rejected`**
+- `reproved` = risk_analyst recusou (receivable não elegível para antecipação).
+- `rejected` = seller recusou a proposta de valor (elegível, mas seller não aceitou os termos).
+- Ambos são terminais sem reativação em v1.
+
+**`payer_rejected`** — payer clicou em "recusar" no magic link. Terminal. O envio de notificações pós-rejeição (email ao seller, etc.) é responsabilidade do Módulo 4 (payer).
+
+**`created` drafts** — ficam no banco indefinidamente enquanto `status = 'created'`. Sem expiração automática em v1. Seller não pode fazer soft delete de um draft.
+
+**`completed` → `payer_settled` / `overdue`**
+- `completed` = seller já recebeu o valor antecipado. A plataforma agora tem um crédito contra o payer.
+- `payer_settled` = payer quitou o valor com a plataforma (no vencimento ou em atraso). **Terminal.** Alcançável a partir de `completed` ou de `overdue`.
+- `overdue` = payer não pagou até o vencimento. Inicia processo de cobrança. **Não terminal** — pode avançar para `payer_settled` se o payer pagar em atraso.
+- Todas as transições pós-`completed` são disparadas pelo **sistema** (webhook bancário, reconciliação ou rota interna manual).
+
+---
+
+## RBAC — matriz de transições
+
+| De | Para | Quem |
+|---|---|---|
+| *(POST /v1/receivables)* | `created` | `seller` (cria o rascunho) |
+| `created` | `under_review` | `seller` (submete o formulário) |
+| `under_review` | `offer` | `risk_analyst` ou `risk_analyst_agent` |
+| `under_review` | `reproved` | `risk_analyst` ou `risk_analyst_agent` |
+| `offer` | `approved` | `seller` (aceita a proposta) |
+| `offer` | `rejected` | `seller` (recusa a proposta) |
+| `approved` | `confirmed` | `payer` via magic link (`payer_magic_link` actor kind) |
+| `approved` | `payer_rejected` | `payer` via magic link (`payer_magic_link` actor kind) |
+| `confirmed` | `processing` | **sistema** (`X-Dupply-Api-Key` only) |
+| `processing` | `completed` | **sistema** (`X-Dupply-Api-Key` only) |
+| `completed` | `payer_settled` | **sistema** (`X-Dupply-Api-Key` only) |
+| `completed` | `overdue` | **sistema** (`X-Dupply-Api-Key` only) |
+| `overdue` | `payer_settled` | **sistema** (`X-Dupply-Api-Key` only) |
+
+---
+
+## Domain guard — sempre usar
+
+```typescript
+// ✅ CORRETO — enforce num único lugar
+assertReceivableTransition(from, to, actor);
+
+// ❌ ERRADO — inline role checks no handler HTTP
+if (req.user.role !== 'risk_analyst') throw ...
+```
+
+`assertReceivableTransition` vive em `src/domain/receivable/transitions.ts`. Toda rota mutante **deve** chamá-la. Não duplicar lógica nos handlers de rota.
+
+---
+
+## Actor shape
+
+```typescript
+type TransitionActor =
+  | { kind: "system" }                  // X-Dupply-Api-Key callers
+  | { kind: "user"; role: string }      // JWT callers (seller, risk_analyst, admin…)
+  | { kind: "payer_magic_link" }        // token de magic link (módulo 4)
+```
+
+---
+
+## Relação com tokenização (Módulo 7)
+
+- `registry_on_chain` é criado quando o receivable entra em **`approved`** — ponto em que seller e analista estão alinhados e a operação definitivamente prosseguirá.
+- FK: `registry_on_chain.receivableId → receivables.id` (optional em v1, obrigatório no fluxo completo).
+- A tokenização deve ocorrer **antes** de enviar o magic link ao payer.
+- Ver `module-registry.mdc` para o ciclo de vida interno da tokenização (`simulated → confirmed → failed`).
+
+---
+
+## Rotas
+
+Todas as rotas seguem o padrão de `routes-swagger.mdc`: `app.withTypeProvider<ZodTypeProvider>()`, schemas Zod no campo `schema:`, `tags:` e `summary:` obrigatórios.
+
+| Método | Rota | Actor | Auth | Tag | Transição / Resposta |
+|---|---|---|---|---|---|
+| POST | `/v1/receivables` | `seller` | `bearerAuth` + `requireRoles("seller")` | `Receivables` | → `created`; retorna `{ id }` 201 |
+| PATCH | `/v1/receivables/:id` | `seller` | `bearerAuth` + ownership | `Receivables` | Edita metadata (apenas em `created`); retorna `{ ok: true }` |
+| POST | `/v1/receivables/:id/submit` | `seller` | `bearerAuth` + ownership | `Receivables` | `created → under_review`; retorna `{ ok: true }` |
+| POST | `/v1/receivables/:id/risk-decision` | `risk_analyst` / `risk_analyst_agent` | `bearerAuth` + `requireRoles(...)` | `Receivables` | `under_review → offer / reproved`; retorna `{ ok: true }` |
+| POST | `/v1/receivables/:id/seller-decision` | `seller` | `bearerAuth` + ownership | `Receivables` | `offer → approved / rejected`; retorna `{ ok: true }` |
+| POST | `/v1/payers/magic-link/respond` | payer (token) | `security: []` (token no body) | `Payers` | `approved → confirmed / payer_rejected`; body `{ decision: "accept" \| "reject" }`; retorna `{ ok: true }` |
+| GET | `/v1/receivables` | `seller` / `risk_analyst` / `admin` | `bearerAuth` | `Receivables` | Lista filtrada por role; retorna `{ receivables: [...] }` |
+| GET | `/v1/receivables/:id` | `seller` / `risk_analyst` / `admin` | `bearerAuth` + ownership | `Receivables` | Retorna `{ receivable: {...} }` |
+| POST | `/v1/internal/receivables/:id/advance-settlement` | sistema | `dupplyApiKey` | `Internal` | `confirmed → processing → completed`; retorna `{ ok: true }` |
+| POST | `/v1/internal/receivables/:id/payer-settlement` | sistema | `dupplyApiKey` | `Internal` | `completed → payer_settled / overdue`; retorna `{ ok: true }` |
+
+> `ownership` = verifica se o `sellerId` do receivable bate com o `profileId` do JWT antes de agir. Ver pattern em `routes-swagger.mdc`.
+
+---
+
+## Invariantes
+
+- `sellerId` e `payerId` são **sempre identidades distintas** no mesmo receivable.
+- `proposedValue` é obrigatório quando risk_analyst move para `offer`; deve estar gravado no DB antes de retornar 200.
+- Em `created`: seller pode editar `receivableMetaData` e `value`. Após transição para `under_review`, edição bloqueada.
+- Seller só pode criar receivable se `seller.status = 'active'`.
+- Receivable com `deletedAt IS NOT NULL` está logicamente removido; nenhuma operação futura é permitida.
+
+---
+
+## Adicionando novas transições
+
+1. Atualizar `RECEIVABLE_STATUS` em `src/domain/receivable/transitions.ts`.
+2. Adicionar o caso em `assertReceivableTransition`.
+3. Escrever testes em `tests/domain/receivable/transitions.test.ts` cobrindo actor autorizado e todos os actores não autorizados.
+4. Atualizar esta rule e `entities-overview.mdc` se a mudança for normativa.
+
+---
+
+## Dependências
+
+- **Módulo 1** (account) — autenticação JWT para seller, risk_analyst, admin.
+- **Módulo 2** (seller) — `sellerId` FK; seller deve estar `active` para criar receivable.
+- **Módulo 4** (payer) — `payerId` FK; upsert por CNPJ no submit; magic link disparado no `approved`.
+- **Módulo 6** (documents) — documentos fiscais e comprovantes vinculados via `parentType = 'receivable'`.
+- **Módulo 7** (registry_on_chain) — tokenização do título; `receivableId` FK; criado ao entrar em `approved`.

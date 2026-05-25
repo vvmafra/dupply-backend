@@ -75,7 +75,7 @@ export const payerMagicTokens = pgTable("payer_magic_tokens", {
 ## Regras de negócio
 
 - Payer é criado/reutilizado no momento em que o seller submete um receivable referenciando aquele CNPJ (upsert por CNPJ).
-- Se o CNPJ já existe em `payers`, reutiliza o registro existente (não cria duplicata).
+- Se o CNPJ já existe em `payers`, reutiliza o registro existente **sem sobrescrever** `legalName` nem `email` — preserva os valores originais.
 - Payer com `deletedAt IS NOT NULL` não pode receber novos receivables vinculados.
 - Payer com `status = 'inactive'` ainda pode ter receivables históricos, mas novos receivables não podem ser vinculados.
 
