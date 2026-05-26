@@ -137,7 +137,7 @@ test("executeUpdatePassword allows login with new password", async () => {
     );
 
     const login = await executeHumanLogin(deps, { email, password: NEW_PASSWORD });
-    assert.ok(login.accessToken.length > 0);
+    assert.ok(login.body.accessToken.length > 0);
   } finally {
     await handle.close();
   }
@@ -153,7 +153,7 @@ test("executeUpdatePassword allows admin to update another account password", as
     });
 
     const login = await executeHumanLogin(deps, { email, password: NEW_PASSWORD });
-    assert.ok(login.accessToken.length > 0);
+    assert.ok(login.body.accessToken.length > 0);
   } finally {
     await handle.close();
   }

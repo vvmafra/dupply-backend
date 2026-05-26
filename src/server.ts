@@ -3,6 +3,7 @@ import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod
 
 import { loadConfig } from "./config.js";
 import { createDb, runMigrations } from "./db/index.js";
+import { registerCookie } from "./plugins/cookie.js";
 import { registerCors } from "./plugins/cors.js";
 import { registerSwagger } from "./plugins/swagger.js";
 import { requireDupplyApiKey } from "./plugins/dupply-auth.js";
@@ -51,6 +52,7 @@ async function main(): Promise<void> {
 
   app.get("/health", async () => ({ ok: true }));
 
+  await registerCookie(app);
   await registerCors(app, config);
   await registerSwagger(app, config);
 

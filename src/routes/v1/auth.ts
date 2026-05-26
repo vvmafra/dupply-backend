@@ -13,16 +13,16 @@ import {
   AuthError,
   type AuthErrorCode,
 } from "../../domain/account/errors.js";
-import { requireJwt } from "../../plugins/jwt-auth.js";
+import {
+  REFRESH_COOKIE_NAME,
+  clearRefreshCookie,
+  setRefreshCookie,
+} from "../../lib/authCookie.js";
 import { issueRefreshToken } from "../../lib/refreshToken.js";
 
 const loginBodySchema = z.object({
   email: z.string().email(),
   password: z.string().min(1),
-});
-
-const refreshBodySchema = z.object({
-  refreshToken: z.string().min(1),
 });
 
 const registerBodySchema = z.object({
@@ -90,7 +90,8 @@ export async function registerAuthRoutes(
         const { plain, stored } = await issueRefreshToken();
         await persistRefreshToken(deps, accountId, plain, stored);
         const loginResult = await buildLoginResult(deps, account, plain);
-        return reply.code(201).send({ ...loginResult, sellerId });
+        setRefreshCookie(reply, config, loginResult.refreshToken);
+        return reply.code(201).send({ ...loginResult.body, sellerId });
       } catch (e) {
         if (isUniqueConstraintError(e)) {
           return reply.code(409).send({ error: "email_already_exists" });
@@ -117,7 +118,9 @@ export async function registerAuthRoutes(
         return reply.code(503).send({ error: "JWT_SECRET not configured" });
       }
       try {
-        return await executeHumanLogin(deps, request.body);
+        const result = await executeHumanLogin(deps, request.body);
+        setRefreshCookie(reply, config, result.refreshToken);
+        return reply.send(result.body);
       } catch (e) {
         const mapped = mapAuthError(e, reply);
         if (mapped) return mapped;
@@ -132,7 +135,6 @@ export async function registerAuthRoutes(
       schema: {
         tags: ["Auth"],
         summary: "Renovar access token",
-        body: refreshBodySchema,
         security: [],
       },
     },
@@ -140,9 +142,16 @@ export async function registerAuthRoutes(
       if (!config.JWT_SECRET) {
         return reply.code(503).send({ error: "JWT_SECRET not configured" });
       }
+      const plain = request.cookies[REFRESH_COOKIE_NAME];
+      if (!plain) {
+        return reply.code(401).send({ error: "missing_refresh_token" });
+      }
       try {
-        return await executeRefreshToken(deps, request.body);
+        const result = await executeRefreshToken(deps, { refreshToken: plain });
+        setRefreshCookie(reply, config, result.refreshToken);
+        return reply.send(result.body);
       } catch (e) {
+        clearRefreshCookie(reply);
         const mapped = mapAuthError(e, reply);
         if (mapped) return mapped;
         throw e;
@@ -153,23 +162,19 @@ export async function registerAuthRoutes(
   api.post(
     "/v1/auth/logout",
     {
-      preHandler: requireJwt(config),
       schema: {
         tags: ["Auth"],
         summary: "Logout (invalida refresh token)",
-        security: [{ bearerAuth: [] }],
+        security: [],
       },
     },
     async (request, reply) => {
-      if (!request.auth) return reply.code(401).send({ error: "unauthorized" });
-      try {
-        await executeLogout(deps, request.auth.sub);
-        return reply.code(204).send();
-      } catch (e) {
-        const mapped = mapAuthError(e, reply);
-        if (mapped) return mapped;
-        throw e;
+      const plain = request.cookies[REFRESH_COOKIE_NAME];
+      if (plain) {
+        await executeLogout(deps, plain);
       }
+      clearRefreshCookie(reply);
+      return reply.code(204).send();
     },
   );
 }

@@ -14,19 +14,22 @@ export type HumanLoginInput = {
   password: string;
 };
 
-export type LoginResult = {
+export type LoginResponseBody = {
   accessToken: string;
-  refreshToken: string;
   tokenType: "Bearer";
   expiresInSeconds: number;
-  refreshExpiresInSeconds: number;
+};
+
+export type LoginCommandResult = {
+  body: LoginResponseBody;
+  refreshToken: string;
 };
 
 export async function buildLoginResult(
   deps: AppDeps,
   account: AccountAuthSnapshot,
   plainRefreshToken: string,
-): Promise<LoginResult> {
+): Promise<LoginCommandResult> {
   const profileId = await resolveProfileId(deps, account.id, account.role);
   const accessToken = await signAccessToken(deps.config, {
     sub: account.id,
@@ -35,18 +38,19 @@ export async function buildLoginResult(
   });
 
   return {
-    accessToken,
+    body: {
+      accessToken,
+      tokenType: "Bearer",
+      expiresInSeconds: deps.config.JWT_ACCESS_TTL_SECONDS,
+    },
     refreshToken: plainRefreshToken,
-    tokenType: "Bearer",
-    expiresInSeconds: deps.config.JWT_ACCESS_TTL_SECONDS,
-    refreshExpiresInSeconds: deps.config.JWT_REFRESH_TTL_SECONDS,
   };
 }
 
 export async function executeHumanLogin(
   deps: AppDeps,
   input: HumanLoginInput,
-): Promise<LoginResult> {
+): Promise<LoginCommandResult> {
   const candidate = requireLoginCandidate(await findAccountByEmail(deps, input.email));
   const ok = await argon2.verify(candidate.passwordHash, input.password);
   if (!ok) {

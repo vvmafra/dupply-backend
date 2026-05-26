@@ -2,7 +2,7 @@ import type { AppDeps } from "../../deps.js";
 import { assertCanAuthenticate } from "../../../domain/account/policies.js";
 import { issueRefreshToken } from "../../../lib/refreshToken.js";
 import { findAccountByRefreshToken, persistRefreshToken } from "./accountAuthDb.js";
-import { buildLoginResult, type LoginResult } from "./loginCommands.js";
+import { buildLoginResult, type LoginCommandResult } from "./loginCommands.js";
 
 export type RefreshTokenInput = {
   refreshToken: string;
@@ -11,7 +11,7 @@ export type RefreshTokenInput = {
 export async function executeRefreshToken(
   deps: AppDeps,
   input: RefreshTokenInput,
-): Promise<LoginResult> {
+): Promise<LoginCommandResult> {
   const account = await findAccountByRefreshToken(deps, input.refreshToken);
   assertCanAuthenticate(account);
 

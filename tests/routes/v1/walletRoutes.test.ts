@@ -8,6 +8,7 @@ import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod
 import { loadConfig } from "../../../src/config.js";
 import { createDb, runMigrations, type DbHandle } from "../../../src/db/index.js";
 import { sellers } from "../../../src/db/schema.runtime.js";
+import { registerCookie } from "../../../src/plugins/cookie.js";
 import { requireJwt } from "../../../src/plugins/jwt-auth.js";
 import { registerAuthRoutes } from "../../../src/routes/v1/auth.js";
 import { registerSellerRoutes } from "../../../src/routes/v1/sellers.js";
@@ -40,6 +41,8 @@ async function createTestApp(): Promise<TestApp> {
   const app = Fastify({ logger: false });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
+
+  await registerCookie(app);
 
   await app.register(async (scope) => {
     await registerAuthRoutes(scope, deps);

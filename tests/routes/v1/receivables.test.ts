@@ -11,6 +11,7 @@ import { createDb, runMigrations, type DbHandle } from "../../../src/db/index.js
 import { receivables } from "../../../src/db/schema.runtime.js";
 import type { AccountRole } from "../../../src/domain/account/types.js";
 import { signAccessToken } from "../../../src/lib/jwt.js";
+import { registerCookie } from "../../../src/plugins/cookie.js";
 import { requireJwt } from "../../../src/plugins/jwt-auth.js";
 import { registerAuthRoutes } from "../../../src/routes/v1/auth.js";
 import { registerReceivableRoutes } from "../../../src/routes/v1/receivables.js";
@@ -41,6 +42,8 @@ async function createTestApp(): Promise<TestApp> {
   const app = Fastify({ logger: false });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
+
+  await registerCookie(app);
 
   await app.register(async (scope) => {
     await registerAuthRoutes(scope, deps);

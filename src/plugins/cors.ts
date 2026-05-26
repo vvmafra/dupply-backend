@@ -36,6 +36,7 @@ export async function registerCors(app: FastifyInstance, config: AppConfig): Pro
   }
 
   await app.register(cors, {
+    credentials: true,
     origin: (origin, callback) => {
       // Server-to-server and curl omit Origin.
       if (!origin) {

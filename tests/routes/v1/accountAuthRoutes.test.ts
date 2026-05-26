@@ -8,6 +8,8 @@ import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod
 
 import { loadConfig } from "../../../src/config.js";
 import { createDb, runMigrations, type DbHandle } from "../../../src/db/index.js";
+import { REFRESH_COOKIE_NAME } from "../../../src/lib/authCookie.js";
+import { registerCookie } from "../../../src/plugins/cookie.js";
 import { requireJwt } from "../../../src/plugins/jwt-auth.js";
 import { registerAccountRoutes } from "../../../src/routes/v1/accounts.js";
 import { registerAuthRoutes } from "../../../src/routes/v1/auth.js";
@@ -19,6 +21,28 @@ type TestApp = {
   deps: AppDeps;
   handle: DbHandle;
 };
+
+function setCookieHeader(res: { headers: { "set-cookie"?: string | string[] } }): string {
+  const raw = res.headers["set-cookie"];
+  if (Array.isArray(raw)) {
+    return raw.join("; ");
+  }
+  return raw ?? "";
+}
+
+function parseRefreshCookieValue(res: { headers: { "set-cookie"?: string | string[] } }): string {
+  const raw = res.headers["set-cookie"];
+  const parts = Array.isArray(raw) ? raw : raw ? [raw] : [];
+  for (const part of parts) {
+    const match = part.match(/^dupply_rt=([^;]+)/);
+    if (match) return match[1]!;
+  }
+  throw new Error("dupply_rt cookie not found in Set-Cookie header");
+}
+
+function refreshCookieHeader(value: string): { cookie: string } {
+  return { cookie: `${REFRESH_COOKIE_NAME}=${value}` };
+}
 
 async function createTestApp(): Promise<TestApp> {
   const handle = createDb("file::memory:");
@@ -32,6 +56,8 @@ async function createTestApp(): Promise<TestApp> {
   const app = Fastify({ logger: false });
   app.setValidatorCompiler(validatorCompiler);
   app.setSerializerCompiler(serializerCompiler);
+
+  await registerCookie(app);
 
   await app.register(async (scope) => {
     await registerAuthRoutes(scope, deps);
@@ -60,16 +86,20 @@ test("login → refresh → GET account → logout flow with profileId in JWT", 
     assert.equal(loginRes.statusCode, 200);
     const loginBody = loginRes.json() as {
       accessToken: string;
-      refreshToken: string;
       tokenType: string;
       expiresInSeconds: number;
-      refreshExpiresInSeconds: number;
     };
     assert.equal(loginBody.tokenType, "Bearer");
     assert.ok(loginBody.accessToken.length > 0);
-    assert.ok(loginBody.refreshToken.length > 0);
+    assert.equal("refreshToken" in loginBody, false);
+    assert.equal("refreshExpiresInSeconds" in loginBody, false);
     assert.equal(loginBody.expiresInSeconds, deps.config.JWT_ACCESS_TTL_SECONDS);
-    assert.equal(loginBody.refreshExpiresInSeconds, deps.config.JWT_REFRESH_TTL_SECONDS);
+
+    const loginCookieHeader = setCookieHeader(loginRes);
+    assert.match(loginCookieHeader, /HttpOnly/i);
+    assert.match(loginCookieHeader, /SameSite=Lax/i);
+    assert.match(loginCookieHeader, /Path=\/v1\/auth/);
+    const loginRefreshToken = parseRefreshCookieValue(loginRes);
 
     const secret = new TextEncoder().encode(deps.config.JWT_SECRET);
     const { payload } = await jose.jwtVerify(loginBody.accessToken, secret, {
@@ -83,15 +113,26 @@ test("login → refresh → GET account → logout flow with profileId in JWT", 
     const refreshRes = await app.inject({
       method: "POST",
       url: "/v1/auth/refresh",
-      payload: { refreshToken: loginBody.refreshToken },
+      headers: refreshCookieHeader(loginRefreshToken),
     });
     assert.equal(refreshRes.statusCode, 200);
     const refreshBody = refreshRes.json() as {
       accessToken: string;
-      refreshToken: string;
+      tokenType: string;
+      expiresInSeconds: number;
     };
-    assert.notEqual(refreshBody.refreshToken, loginBody.refreshToken);
+    assert.equal("refreshToken" in refreshBody, false);
+    const rotatedRefreshToken = parseRefreshCookieValue(refreshRes);
+    assert.notEqual(rotatedRefreshToken, loginRefreshToken);
     assert.ok(refreshBody.accessToken.length > 0);
+
+    const refreshWithOldCookie = await app.inject({
+      method: "POST",
+      url: "/v1/auth/refresh",
+      headers: refreshCookieHeader(loginRefreshToken),
+    });
+    assert.equal(refreshWithOldCookie.statusCode, 401);
+    assert.deepEqual(refreshWithOldCookie.json(), { error: "invalid_refresh_token" });
 
     const getRes = await app.inject({
       method: "GET",
@@ -115,14 +156,15 @@ test("login → refresh → GET account → logout flow with profileId in JWT", 
     const logoutRes = await app.inject({
       method: "POST",
       url: "/v1/auth/logout",
-      headers: { authorization: `Bearer ${refreshBody.accessToken}` },
+      headers: refreshCookieHeader(rotatedRefreshToken),
     });
     assert.equal(logoutRes.statusCode, 204);
+    assert.match(setCookieHeader(logoutRes), /dupply_rt=/);
 
     const refreshAfterLogout = await app.inject({
       method: "POST",
       url: "/v1/auth/refresh",
-      payload: { refreshToken: refreshBody.refreshToken },
+      headers: refreshCookieHeader(rotatedRefreshToken),
     });
     assert.equal(refreshAfterLogout.statusCode, 401);
     assert.deepEqual(refreshAfterLogout.json(), { error: "invalid_refresh_token" });
@@ -146,10 +188,11 @@ test("POST /v1/auth/register creates seller and returns tokens", async () => {
       },
     });
     assert.equal(res.statusCode, 201);
-    const body = res.json() as { accessToken: string; refreshToken: string; sellerId: string };
+    const body = res.json() as { accessToken: string; sellerId: string };
     assert.ok(body.accessToken);
-    assert.ok(body.refreshToken);
     assert.ok(body.sellerId);
+    assert.equal("refreshToken" in body, false);
+    assert.match(setCookieHeader(res), /dupply_rt=/);
   } finally {
     await app.close();
     await handle.close();
@@ -197,6 +240,80 @@ test("POST /v1/auth/login maps auth errors to HTTP status", async () => {
     });
     assert.equal(wrongRes.statusCode, 401);
     assert.deepEqual(wrongRes.json(), { error: "invalid_credentials" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/auth/refresh without cookie returns 401 missing_refresh_token", async () => {
+  const { app, handle } = await createTestApp();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/auth/refresh",
+    });
+    assert.equal(res.statusCode, 401);
+    assert.deepEqual(res.json(), { error: "missing_refresh_token" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/auth/refresh with invalid cookie clears dupply_rt and returns 401", async () => {
+  const { app, handle } = await createTestApp();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/auth/refresh",
+      headers: refreshCookieHeader("invalid-token"),
+    });
+    assert.equal(res.statusCode, 401);
+    assert.deepEqual(res.json(), { error: "invalid_refresh_token" });
+    const header = setCookieHeader(res);
+    assert.match(header, /dupply_rt=/);
+    assert.match(header, /Max-Age=0|Expires=Thu, 01 Jan 1970/i);
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/auth/logout without cookie returns 204", async () => {
+  const { app, handle } = await createTestApp();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/auth/logout",
+    });
+    assert.equal(res.statusCode, 204);
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/auth/logout without Authorization header returns 204", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await insertAccount(deps);
+
+    const loginRes = await app.inject({
+      method: "POST",
+      url: "/v1/auth/login",
+      payload: { email, password: TEST_PASSWORD },
+    });
+    assert.equal(loginRes.statusCode, 200);
+    const refreshToken = parseRefreshCookieValue(loginRes);
+
+    const logoutRes = await app.inject({
+      method: "POST",
+      url: "/v1/auth/logout",
+      headers: refreshCookieHeader(refreshToken),
+    });
+    assert.equal(logoutRes.statusCode, 204);
+    assert.match(setCookieHeader(logoutRes), /dupply_rt=/);
   } finally {
     await app.close();
     await handle.close();

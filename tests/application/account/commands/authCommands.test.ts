@@ -38,11 +38,12 @@ test("executeHumanLogin returns tokens and persists refresh state", async () => 
 
     const result = await executeHumanLogin(deps, { email, password: TEST_PASSWORD_LOCAL });
 
-    assert.equal(result.tokenType, "Bearer");
-    assert.ok(result.accessToken.length > 0);
+    assert.equal(result.body.tokenType, "Bearer");
+    assert.ok(result.body.accessToken.length > 0);
     assert.ok(result.refreshToken.length > 0);
-    assert.equal(result.expiresInSeconds, deps.config.JWT_ACCESS_TTL_SECONDS);
-    assert.equal(result.refreshExpiresInSeconds, deps.config.JWT_REFRESH_TTL_SECONDS);
+    assert.equal(result.body.expiresInSeconds, deps.config.JWT_ACCESS_TTL_SECONDS);
+    assert.equal("refreshToken" in result.body, false);
+    assert.equal("refreshExpiresInSeconds" in result.body, false);
 
     const [row] = await deps.db.select().from(accounts).where(eq(accounts.id, id)).limit(1);
     assert.ok(row?.refreshToken);
@@ -72,7 +73,7 @@ test("second login overwrites previous refresh token (single session)", async ()
     );
 
     const refreshed = await executeRefreshToken(deps, { refreshToken: second.refreshToken });
-    assert.ok(refreshed.accessToken.length > 0);
+    assert.ok(refreshed.body.accessToken.length > 0);
   } finally {
     await handle.close();
   }
@@ -102,7 +103,7 @@ test("executeLogout nullifies refresh token and blocks subsequent refresh", asyn
     const { id, email } = await insertAccount(deps);
     const login = await executeHumanLogin(deps, { email, password: TEST_PASSWORD_LOCAL });
 
-    await executeLogout(deps, id);
+    await executeLogout(deps, login.refreshToken);
 
     const [row] = await deps.db.select().from(accounts).where(eq(accounts.id, id)).limit(1);
     assert.equal(row?.refreshToken, null);
@@ -116,6 +117,15 @@ test("executeLogout nullifies refresh token and blocks subsequent refresh", asyn
         return true;
       },
     );
+  } finally {
+    await handle.close();
+  }
+});
+
+test("executeLogout with unknown token resolves without throwing", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    await assert.doesNotReject(() => executeLogout(deps, "unknown-plain-refresh-token"));
   } finally {
     await handle.close();
   }
