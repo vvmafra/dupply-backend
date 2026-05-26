@@ -45,10 +45,15 @@ export const accounts = pgTable("accounts", {
 
 ```
 POST /v1/auth/register  → cria account + perfil correspondente (seller/risk_analyst/admin)
-POST /v1/auth/login     → valida email+senha; emite accessToken (JWT curto) + refreshToken; persiste refreshToken em account
-POST /v1/auth/refresh   → valida refreshToken; emite novo accessToken
-POST /v1/auth/logout    → nulifica refreshToken em account
+POST /v1/auth/login     → valida email+senha; emite accessToken (JWT curto); persiste refreshToken em account; entrega refresh via cookie HttpOnly dupply_rt
+POST /v1/auth/refresh   → lê dupply_rt do cookie; valida refreshToken; emite novo accessToken; rotaciona cookie
+POST /v1/auth/logout    → lê dupply_rt do cookie; nulifica refreshToken em account; limpa cookie (sem Bearer)
 ```
+
+**Transporte do refresh token (v1):**
+- Cookie `dupply_rt` — `HttpOnly`, `SameSite=Lax`, `Path=/v1/auth`, `Secure` em produção.
+- O JSON de login/register/refresh **não** inclui `refreshToken` nem `refreshExpiresInSeconds`.
+- Helpers em `src/lib/authCookie.ts`; parsing via `@fastify/cookie`.
 
 **JWT payload:**
 ```typescript
@@ -62,8 +67,8 @@ POST /v1/auth/logout    → nulifica refreshToken em account
 ```
 
 - `accessToken` expira em 15 min (curto).
-- `refreshToken` expira em 7 dias (armazenado em `account.refreshToken`).
-- Ao renovar via `/refresh`, o `refreshToken` antigo é invalidado (rotação simples).
+- O refresh token opaco expira em 7 dias (hash Argon2 em `account.refreshToken`; lookup SHA-256 em `refreshTokenLookup`).
+- Ao renovar via `/refresh`, o token antigo é invalidado (rotação simples); o novo valor vai no cookie `dupply_rt`.
 
 ---
 
@@ -72,9 +77,9 @@ POST /v1/auth/logout    → nulifica refreshToken em account
 | Método | Rota | Actor | Descrição |
 |---|---|---|---|
 | POST | `/v1/auth/register` | público | Cria account + perfil |
-| POST | `/v1/auth/login` | público | Emite JWT + refreshToken |
-| POST | `/v1/auth/refresh` | público (com refreshToken) | Renova accessToken |
-| POST | `/v1/auth/logout` | JWT | Invalida refreshToken |
+| POST | `/v1/auth/login` | público | Emite JWT; seta cookie `dupply_rt` |
+| POST | `/v1/auth/refresh` | público (cookie `dupply_rt`) | Renova accessToken; rotaciona cookie |
+| POST | `/v1/auth/logout` | público (cookie `dupply_rt`) | Invalida refreshToken; limpa cookie |
 | GET | `/v1/accounts/me` | JWT | Lê a conta do actor autenticado (alias) |
 | GET | `/v1/accounts/:id` | admin ou próprio account | Lê account |
 | PATCH | `/v1/accounts/:id` | admin ou próprio account | Atualiza email/senha |

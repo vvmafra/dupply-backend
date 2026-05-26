@@ -1,5 +1,7 @@
 # Product Requirements Document — Refresh Token HttpOnly Cookie
 
+**Status:** Implemented (backend)
+
 ## Overview
 
 Currently, the auth flow returns the `refreshToken` in the JSON response body of `/v1/auth/login` and `/v1/auth/register`, and expects it back in the JSON request body of `/v1/auth/refresh`. This means the frontend must read, store, and resend the refresh token — making it readable by JavaScript and vulnerable to XSS attacks.
@@ -36,7 +38,7 @@ This feature migrates the refresh token transport to an `HttpOnly; Secure; SameS
 ## Core Features
 
 1. **Cookie-based refresh token delivery**
-   - What it does: login and register set an `HttpOnly; Secure; SameSite=Lax` cookie named `dupply_rt` scoped to `Path=/v1/auth/refresh` instead of returning `refreshToken` in the JSON body.
+   - What it does: login and register set an `HttpOnly; Secure; SameSite=Lax` cookie named `dupply_rt` scoped to `Path=/v1/auth` instead of returning `refreshToken` in the JSON body.
    - Why it matters: `HttpOnly` cookies are inaccessible to JavaScript, eliminating the XSS attack surface for the refresh token.
 
 2. **Cookie-based refresh token consumption**
@@ -57,7 +59,7 @@ This feature migrates the refresh token transport to an `HttpOnly; Secure; SameS
 
 ## Functional Requirements
 
-1. FR-1: `POST /v1/auth/login` and `POST /v1/auth/register` must set a `dupply_rt` cookie on a successful response. The cookie must have `HttpOnly`, `Secure`, `SameSite=Lax`, and `Path=/v1/auth/refresh` attributes. The TTL must match `JWT_REFRESH_TTL_SECONDS`.
+1. FR-1: `POST /v1/auth/login` and `POST /v1/auth/register` must set a `dupply_rt` cookie on a successful response. The cookie must have `HttpOnly`, `Secure`, `SameSite=Lax`, and `Path=/v1/auth` attributes. The TTL must match `JWT_REFRESH_TTL_SECONDS`.
 2. FR-2: `POST /v1/auth/login` and `POST /v1/auth/register` must NOT include `refreshToken` or `refreshExpiresInSeconds` in the JSON response body.
 3. FR-3: `POST /v1/auth/refresh` must read the refresh token from the `dupply_rt` cookie. It must reject requests without the cookie with `401 { error: "missing_refresh_token" }`.
 4. FR-4: `POST /v1/auth/refresh` must rotate the refresh token on every successful call: clear the old `dupply_rt` cookie and set a new one with updated TTL.
@@ -75,7 +77,7 @@ This feature migrates the refresh token transport to an `HttpOnly; Secure; SameS
 - No new database tables or migrations required. The refresh token storage schema (`refreshToken`, `refreshTokenLookup` columns on `accounts`) remains unchanged.
 - `LoginResult` type in `loginCommands.ts` must be updated to remove `refreshToken` and `refreshExpiresInSeconds` — this is a breaking change to the existing JSON contract for `/v1/auth/login` and `/v1/auth/register`.
 - CORS change (`credentials: true`) must be combined with explicit origin allowlist — wildcard `*` origin is incompatible with `credentials: true` and must not be used.
-- Cookie `Path=/v1/auth/refresh` limits cookie scope. Logout reads the same cookie, so `/v1/auth/logout` path must either share the `/v1/auth` path scope or the cookie path must be broadened to `/v1/auth`.
+- Cookie `Path=/v1/auth` limits cookie scope to auth routes (`login`, `register`, `refresh`, `logout`) while allowing the browser to attach the cookie on logout.
 
 ## Cleanup included in this change
 
@@ -89,7 +91,7 @@ The following existing inconsistencies should be resolved as part of this work:
 
 ## Out of Scope
 
-- Frontend changes (handled in a separate frontend PRD).
+- Frontend changes (handled in frontend specs under `dupply-frontend/.specs/features/auth-login-persistence/`).
 - Cookie signing or encryption (`__Secure-` prefix, HMAC-signed cookies) — the token is already hashed server-side; signing the cookie adds no meaningful security here.
 - Refresh token family tracking or reuse detection (future enhancement).
 - Multi-tab silent refresh coordination (frontend concern).
@@ -101,5 +103,5 @@ _All questions resolved._
 
 | Question | Decision |
 |---|---|
-| Cookie `Path`: `/v1/auth/refresh` vs `/v1/auth` | **`Path=/v1/auth/refresh`** — maximum scope restriction. `/v1/auth/logout` reads the cookie value manually from the `Cookie` header (browser does not attach it automatically). |
+| Cookie `Path`: `/v1/auth/refresh` vs `/v1/auth` | **`Path=/v1/auth`** — minimum scope that covers both `/v1/auth/refresh` and `/v1/auth/logout`. With `Path=/v1/auth/refresh`, the browser never sends the cookie to logout and `HttpOnly` prevents manual forwarding from JavaScript. |
 | `Secure` attribute in local development | **Omit `Secure` when `NODE_ENV !== "production"`** (FR-10). No local HTTPS required. |

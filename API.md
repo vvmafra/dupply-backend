@@ -39,11 +39,12 @@ npm run dev
 ### Routes
 
 - `GET /health` — no authentication.
-- **Auth** (no Bearer on login/refresh/register; logout requires Bearer):
-  - `POST /v1/auth/register` — `{ "email", "password", "name", "role": "seller" }`; creates account + seller atomically; returns `201` with login token shape plus `{ sellerId }`. Only `role: "seller"` is accepted in v1.
-  - `POST /v1/auth/login` — `{ "email", "password" }`; returns `{ accessToken, refreshToken, tokenType, expiresInSeconds, refreshExpiresInSeconds }`.
-  - `POST /v1/auth/refresh` — `{ "refreshToken" }`; same response shape as login (refresh token rotated).
-  - `POST /v1/auth/logout` — Bearer JWT; invalidates stored refresh token (`204`).
+- **Auth** (no Bearer on login/refresh/register/logout; refresh token travels in an `HttpOnly` cookie):
+  - `POST /v1/auth/register` — `{ "email", "password", "name", "role": "seller" }`; creates account + seller atomically; returns `201` with `{ accessToken, tokenType, expiresInSeconds, sellerId }` and sets cookie `dupply_rt`. Only `role: "seller"` is accepted in v1.
+  - `POST /v1/auth/login` — `{ "email", "password" }`; returns `{ accessToken, tokenType, expiresInSeconds }` and sets cookie `dupply_rt` (`HttpOnly; SameSite=Lax; Path=/v1/auth`; `Secure` in production).
+  - `POST /v1/auth/refresh` — **no body**; reads `dupply_rt` from the request cookie; returns `{ accessToken, tokenType, expiresInSeconds }` and rotates `dupply_rt`. Missing cookie → `401 { "error": "missing_refresh_token" }`.
+  - `POST /v1/auth/logout` — **no body, no Bearer**; reads `dupply_rt`, invalidates the stored refresh token server-side, clears the cookie (`204`).
+  - **SPA clients:** send `credentials: "include"` on all `/v1/auth/*` requests so the browser attaches `dupply_rt`. CORS is configured with `credentials: true` and an explicit origin allowlist (`CORS_ALLOWED_ORIGINS`).
 - **Accounts** (`Authorization: Bearer <accessToken>`):
   - `GET /v1/accounts/me` — authenticated alias for the caller's own account; same response as `GET /v1/accounts/:id` when `:id` equals JWT `sub` (excludes password hash and refresh token).
   - `GET /v1/accounts/:id` — account profile (owner or admin; excludes password hash and refresh token).
@@ -154,8 +155,15 @@ Requires `JWT_SECRET`, `DUPPLY_API_KEY`, and existing seller/payer account ids. 
 
 ```bash
 BASE=http://localhost:8080
-TOKEN=$(curl -sS -X POST "$BASE/v1/auth/login" -H 'Content-Type: application/json' \
+# Login — response body has accessToken only; refresh token is in Set-Cookie dupply_rt
+curl -sS -c cookies.txt -X POST "$BASE/v1/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"seller@dupply.dev.local","password":"dev-password-change-me"}'
+
+TOKEN=$(curl -sS -b cookies.txt -c cookies.txt -X POST "$BASE/v1/auth/login" \
+  -H 'Content-Type: application/json' \
   -d '{"email":"seller@dupply.dev.local","password":"dev-password-change-me"}' | jq -r .accessToken)
+
 curl -sS "$BASE/v1/receivables" -H "Authorization: Bearer $TOKEN"
 ```
 

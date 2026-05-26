@@ -4,7 +4,7 @@
 
 This spec covers migrating the refresh token transport from a JSON body field to an `HttpOnly; Secure; SameSite=Lax` cookie named `dupply_rt`. The access token continues to be returned in the response body. Changes touch the HTTP layer (`routes/v1/auth.ts`, `plugins/`), a new infrastructure helper (`lib/authCookie.ts`), and the application layer (`loginCommands.ts`, `logoutCommands.ts`). No schema or migration changes are needed.
 
-**Not in scope:** frontend changes, cookie signing, refresh token family tracking, or BFF migration.
+**Not in scope (backend PRD):** frontend changes — see frontend auth specs for cookie client integration.
 
 ---
 
