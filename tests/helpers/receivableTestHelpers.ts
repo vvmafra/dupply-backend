@@ -28,7 +28,7 @@ export const completeReceivableMetaData: ReceivableMetaData = {
   fiscalDocumentKey: "35250112345678000195550010000000011234567890",
   proofType: "delivery",
   payerAcceptanceStatus: "accepted",
-  desiredAnticipationValue: 50000,
+  desiredAnticipationValue: 500,
   antifraudDeclarationsAccepted: true,
 };
 
@@ -64,7 +64,7 @@ export async function createDraftReceivable(
     payerCnpj?: string;
     payerLegalName?: string;
     payerFinancialEmail?: string;
-    value?: string;
+    value?: number;
     receivableMetaData?: Partial<ReceivableMetaData>;
   } = {},
 ): Promise<string> {
@@ -73,7 +73,7 @@ export async function createDraftReceivable(
     payerCnpj: overrides.payerCnpj ?? PAYER_CNPJ,
     payerLegalName: overrides.payerLegalName ?? "Payer Corp LTDA",
     payerFinancialEmail: overrides.payerFinancialEmail ?? "finance@payer.com",
-    value: overrides.value ?? "50000",
+    value: overrides.value ?? 500,
     receivableMetaData: overrides.receivableMetaData,
   });
   return result.id;

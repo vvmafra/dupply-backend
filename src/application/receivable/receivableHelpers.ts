@@ -2,10 +2,50 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import type { AppDeps } from "../deps.js";
 import { payers, receivables } from "../../db/schema.runtime.js";
+import { parseReceivableMetaData } from "../../domain/receivable/metadata.js";
 import { RECEIVABLE_ERROR_CODES, ReceivableError } from "../../domain/receivable/errors.js";
-import type { ReceivableRow } from "../../domain/receivable/types.js";
+import type { ReceivableMetaData, ReceivableRow } from "../../domain/receivable/types.js";
+import { toCents, toReais } from "../../shared/money.js";
 
 export type ReceivableDbRow = typeof receivables.$inferSelect;
+
+export function valueReaisToDbCentsText(reais?: number): string {
+  if (reais === undefined) return "0";
+  return String(toCents(reais));
+}
+
+export function valueDbCentsTextToReais(centsText: string): number {
+  const cents = Number.parseInt(centsText, 10);
+  if (Number.isNaN(cents)) return 0;
+  return toReais(cents);
+}
+
+export function metaApiToStored(meta: Partial<ReceivableMetaData>): Partial<ReceivableMetaData> {
+  const out = { ...meta };
+  if (out.desiredAnticipationValue !== undefined) {
+    out.desiredAnticipationValue = toCents(out.desiredAnticipationValue);
+  }
+  return out;
+}
+
+export function metaStoredToApi(meta: ReceivableMetaData): ReceivableMetaData {
+  const out = { ...meta };
+  if (out.desiredAnticipationValue !== undefined) {
+    out.desiredAnticipationValue = toReais(out.desiredAnticipationValue);
+  }
+  return out;
+}
+
+export function stringifyReceivableMetaData(meta: Partial<ReceivableMetaData>): string {
+  return JSON.stringify(metaApiToStored(meta));
+}
+
+export function mapReceivableMetaDataForApi(raw: string | null): string | null {
+  if (!raw) return null;
+  const meta = parseReceivableMetaData(raw);
+  if (!meta) return raw;
+  return JSON.stringify(metaStoredToApi(meta));
+}
 
 export function mapReceivableRow(row: ReceivableDbRow): ReceivableRow {
   return {
@@ -13,9 +53,10 @@ export function mapReceivableRow(row: ReceivableDbRow): ReceivableRow {
     status: row.status,
     sellerId: row.sellerId,
     payerId: row.payerId,
-    receivableMetaData: row.receivableMetaData,
-    value: row.value,
-    proposedValue: row.proposedValue,
+    receivableMetaData: mapReceivableMetaDataForApi(row.receivableMetaData),
+    value: valueDbCentsTextToReais(row.value),
+    proposedValue:
+      row.proposedValue == null ? null : valueDbCentsTextToReais(row.proposedValue),
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,

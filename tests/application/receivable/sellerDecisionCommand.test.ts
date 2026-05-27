@@ -33,7 +33,7 @@ async function offerDraft(deps: Awaited<ReturnType<typeof createTestContext>>["d
     receivableId: id,
     actorRole: "risk_analyst",
     decision: "offer",
-    proposedValue: "45000",
+    proposedValue: 450,
   });
   return id;
 }

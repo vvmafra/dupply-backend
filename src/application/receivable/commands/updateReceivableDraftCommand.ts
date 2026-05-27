@@ -8,12 +8,16 @@ import {
 } from "../../../domain/receivable/policies.js";
 import { parseReceivableMetaData } from "../../../domain/receivable/metadata.js";
 import type { ReceivableMetaData } from "../../../domain/receivable/types.js";
-import { loadReceivableOrThrow } from "../receivableHelpers.js";
+import {
+  loadReceivableOrThrow,
+  metaApiToStored,
+  valueReaisToDbCentsText,
+} from "../receivableHelpers.js";
 
 export type UpdateReceivableDraftInput = {
   receivableId: string;
   profileId: string;
-  value?: string;
+  value?: number;
   receivableMetaData?: Partial<ReceivableMetaData>;
 };
 
@@ -28,7 +32,7 @@ export async function executeUpdateReceivableDraft(
   const existing = parseReceivableMetaData(row.receivableMetaData) ?? {};
   const merged =
     input.receivableMetaData !== undefined
-      ? { ...existing, ...input.receivableMetaData }
+      ? { ...existing, ...metaApiToStored(input.receivableMetaData) }
       : existing;
   const receivableMetaData =
     input.receivableMetaData !== undefined ? JSON.stringify(merged) : row.receivableMetaData;
@@ -36,7 +40,7 @@ export async function executeUpdateReceivableDraft(
   await deps.db
     .update(receivables)
     .set({
-      value: input.value?.trim() ?? row.value,
+      value: input.value !== undefined ? valueReaisToDbCentsText(input.value) : row.value,
       receivableMetaData,
       updatedAt: new Date(),
     })

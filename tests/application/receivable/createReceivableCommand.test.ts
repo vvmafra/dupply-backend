@@ -26,7 +26,7 @@ test("active seller creates draft with sellerId and payerId", async () => {
       payerCnpj: PAYER_CNPJ,
       payerLegalName: "Payer Corp",
       payerFinancialEmail: "finance@payer.com",
-      value: "50000",
+      value: 500,
     });
     const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
     assert.equal(row?.status, RECEIVABLE_STATUS.CREATED);

@@ -40,7 +40,7 @@ test("risk offer sets proposedValue and status offer", async () => {
       receivableId: id,
       actorRole: "risk_analyst",
       decision: "offer",
-      proposedValue: "45000",
+      proposedValue: 450,
     });
     const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
     assert.equal(row?.status, RECEIVABLE_STATUS.OFFER);
@@ -84,7 +84,7 @@ test("reprove with proposedValue throws", async () => {
           receivableId: id,
           actorRole: "risk_analyst",
           decision: "reprove",
-          proposedValue: "1",
+          proposedValue: 0.01,
         }),
       (e: unknown) => {
         assert.ok(e instanceof ReceivableError);

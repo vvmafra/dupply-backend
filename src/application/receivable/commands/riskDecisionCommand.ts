@@ -8,13 +8,13 @@ import {
   RECEIVABLE_STATUS,
   type ReceivableStatus,
 } from "../../../domain/receivable/transitions.js";
-import { loadReceivableOrThrow } from "../receivableHelpers.js";
+import { loadReceivableOrThrow, valueReaisToDbCentsText } from "../receivableHelpers.js";
 
 export type RiskDecisionInput = {
   receivableId: string;
   actorRole: string;
   decision: "offer" | "reprove";
-  proposedValue?: string;
+  proposedValue?: number;
 };
 
 export async function executeRiskDecision(deps: AppDeps, input: RiskDecisionInput): Promise<void> {
@@ -25,10 +25,10 @@ export async function executeRiskDecision(deps: AppDeps, input: RiskDecisionInpu
     input.decision === "offer" ? RECEIVABLE_STATUS.OFFER : RECEIVABLE_STATUS.REPROVED;
 
   if (to === RECEIVABLE_STATUS.OFFER) {
-    if (!input.proposedValue?.trim()) {
+    if (input.proposedValue === undefined || input.proposedValue <= 0) {
       throw new ReceivableError(RECEIVABLE_ERROR_CODES.PROPOSED_VALUE_REQUIRED);
     }
-  } else if (input.proposedValue?.trim()) {
+  } else if (input.proposedValue !== undefined) {
     throw new ReceivableError(RECEIVABLE_ERROR_CODES.PROPOSED_VALUE_FORBIDDEN);
   }
 
@@ -38,7 +38,10 @@ export async function executeRiskDecision(deps: AppDeps, input: RiskDecisionInpu
     .update(receivables)
     .set({
       status: to,
-      proposedValue: to === RECEIVABLE_STATUS.OFFER ? input.proposedValue!.trim() : null,
+      proposedValue:
+        to === RECEIVABLE_STATUS.OFFER
+          ? valueReaisToDbCentsText(input.proposedValue)
+          : null,
       updatedAt: new Date(),
     })
     .where(eq(receivables.id, input.receivableId));

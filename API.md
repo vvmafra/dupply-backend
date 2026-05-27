@@ -27,7 +27,7 @@ cp .env.example .env
 
 Access token claims: `sub` (account id), `role`, `profileId`. For **seller** accounts, `profileId` is the real `seller.id`. For `admin` and `risk_analyst`, `profileId` remains a mocked placeholder until their profile modules land.
 
-**Money convention:** monetary fields in seller metadata (`shareCapital`, `annualRevenue`) are sent and returned by the API in **reais with 2 decimal places** (e.g. `150000.00`). They are stored internally as integer **cents** (e.g. `15000000`).
+**Money convention:** monetary API fields use **reais with 2 decimal places** (`number`, e.g. `150000.00`). Storage uses integer **cents** (e.g. `15000000` in seller JSON; receivable `value` / `proposedValue` as centavos text in DB). Applies to seller metadata (`shareCapital`, `annualRevenue`) and receivables (`value`, `proposedValue`, `receivableMetaData.desiredAnticipationValue`).
 
 ## Commands
 
@@ -63,11 +63,24 @@ npm run dev
   - `GET /v1/wallets/:id` — seller (own wallet) or admin.
   - `PATCH /v1/wallets/:id/status` — admin; body `{ "status": "active" | "inactive" }`.
 - **Receivables** (`Authorization: Bearer <accessToken>`):
-  - `GET /v1/receivables` — list (seller: own; payer: own; admin / risk / risk_analyst_agent: up to 200 rows).
-  - `GET /v1/receivables/:id` — detail if caller may view.
-  - `POST /v1/receivables` — **seller**; body `{ "payerUserId" (UUID), "value", "receivableMd"? }`; validates seller exists with `status=active` and not soft-deleted; `payerUserId` is accepted without DB lookup until the payer module lands; creates row with `status=under_review`.
-  - `POST /v1/receivables/:id/risk-decision` — **risk_analyst** or **risk_analyst_agent**; body `{ "decision": "offer" | "reject", "proposedValue"? }` (`proposedValue` required when `decision` is `offer`).
-  - `POST /v1/receivables/:id/confirm` — **payer** bound to `payer_user_id`; moves `offer` → `confirmed`.
+  - Lifecycle v2: `created` → `under_review` → `offer` | `reproved`; `offer` → `approved` | `rejected` (seller decision); payer confirmation and platform settlement are separate flows (magic link + internal routes).
+  - **Money:** `value`, `proposedValue`, and `desiredAnticipationValue` (inside `receivableMetaData`) are **reais** in JSON request/response (e.g. `150000.00`); stored as centavos in DB — see money convention above.
+  - `GET /v1/receivables` — **seller** (own rows); **admin** / **risk_analyst** / **risk_analyst_agent** (all non-deleted, up to 200). Returns `{ "receivables": ReceivableRow[] }`.
+  - `GET /v1/receivables/:id` — **seller** (own), **admin**, **risk_analyst**, **risk_analyst_agent**; payer role forbidden. Returns `{ "receivable": ReceivableRow }`.
+  - `POST /v1/receivables` — **seller**; body `{ "payerCnpj", "payerLegalName"?, "payerFinancialEmail"?, "value"?, "receivableMetaData"? }`; upserts payer by CNPJ; requires seller `status=active`; creates draft with `status=created`; returns `201 { "id" }`.
+  - `POST /v1/receivables/submit` — **seller**; same body as create; validates complete metadata; creates receivable directly in `under_review` (atomic create+submit); returns `201 { "id", "status": "under_review" }`.
+  - `PATCH /v1/receivables/:id` — **seller** (own); body `{ "value"?, "receivableMetaData"? }`; only when `status=created`; returns `{ "ok": true }`.
+  - `POST /v1/receivables/:id/submit` — **seller** (own); validates metadata completeness; transitions `created` → `under_review`; returns `{ "ok": true }`.
+  - `POST /v1/receivables/:id/risk-decision` — **risk_analyst** or **risk_analyst_agent**; body `{ "decision": "offer" | "reprove", "proposedValue"? }` (`proposedValue` required when `decision` is `offer`); returns `{ "ok": true }`.
+  - `POST /v1/receivables/:id/seller-decision` — **seller** (own); body `{ "decision": "accept" | "reject" }` when `status=offer`; returns `{ "ok": true }`.
+  - **Known errors** (`{ "error": "<code>" }` unless noted):
+    - `seller_not_active` — `403`; seller not `active` on create/submit.
+    - `incomplete_metadata` — `400`; submit without required metadata fields.
+    - `metadata_locked` — `409`; PATCH when `status` ≠ `created`.
+    - `seller_and_payer_must_differ` — `400`; seller CNPJ equals payer CNPJ.
+    - `proposed_value_required_for_offer` — `400`; risk decision `offer` without `proposedValue`.
+    - `invalid_receivable_transition` — `409`; illegal status transition.
+    - Also: `receivable_not_found` (`404`), `not_owner` / `forbidden` (`403`), `receivable_deleted` (`409`), `proposed_value_not_allowed_for_reprove` (`400`).
 - **Internal settlement** (`X-Dupply-Api-Key` only — workers / BFF; not for end users):  
   - `POST /v1/internal/receivables/:id/advance-settlement` — body `{ "targetStatus": "processing" | "completed" }`; enforces `confirmed` → `processing` → `completed` with **system** transition rules.
 - **Ramp** (`X-Dupply-Api-Key`): `GET /v1/ramp/assets`, `POST /v1/ramp/quotes`, `POST /v1/ramp/orders`, `GET /v1/ramp/orders/:id`.
@@ -151,7 +164,7 @@ DATABASE_URL=file:./data/dupply.db npm run db:migrate
 
 ### Receivable lifecycle (HTTP)
 
-Requires `JWT_SECRET`, `DUPPLY_API_KEY`, and existing seller/payer account ids. Payer ids are opaque until the payer entity module ships.
+Requires `JWT_SECRET` and an active seller account. Payer is resolved by `payerCnpj` on create (upsert into `payers` table).
 
 ```bash
 BASE=http://localhost:8080
@@ -165,6 +178,11 @@ TOKEN=$(curl -sS -b cookies.txt -c cookies.txt -X POST "$BASE/v1/auth/login" \
   -d '{"email":"seller@dupply.dev.local","password":"dev-password-change-me"}' | jq -r .accessToken)
 
 curl -sS "$BASE/v1/receivables" -H "Authorization: Bearer $TOKEN"
+
+# Draft create (status=created)
+curl -sS -X POST "$BASE/v1/receivables" \
+  -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"payerCnpj":"12345678000199","value":1000}'
 ```
 
 ### Trade bills (HTTP)

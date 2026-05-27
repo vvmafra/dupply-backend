@@ -22,7 +22,7 @@ test("updates draft metadata and value", async () => {
     await executeUpdateReceivableDraft(deps, {
       receivableId: id,
       profileId: sellerId,
-      value: "75000",
+      value: 750,
       receivableMetaData: { billNumber: "BILL-UPDATED" },
     });
     const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
@@ -54,7 +54,7 @@ test("update on non-created status throws METADATA_LOCKED", async () => {
         executeUpdateReceivableDraft(deps, {
           receivableId: id,
           profileId: sellerId,
-          value: "1",
+          value: 0.01,
         }),
       (e: unknown) => {
         assert.ok(e instanceof ReceivableError);

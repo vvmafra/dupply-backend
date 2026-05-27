@@ -67,7 +67,7 @@ async function confirmedReceivable(deps: AppDeps, sellerId: string): Promise<str
     receivableId: id,
     actorRole: "risk_analyst",
     decision: "offer",
-    proposedValue: "45000",
+    proposedValue: 450,
   });
   await executeSellerDecision(deps, {
     receivableId: id,

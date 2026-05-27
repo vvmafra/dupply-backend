@@ -11,6 +11,7 @@ export type ReceivableMetaData = {
   fiscalDocumentKey: string;
   proofType: "delivery" | "acceptance" | "service_provision";
   payerAcceptanceStatus: "accepted" | "pending" | "refused";
+  /** Stored JSON: centavos BRL; API I/O: reais — see money.mdc */
   desiredAnticipationValue: number;
   antifraudDeclarationsAccepted: boolean;
 };
@@ -21,8 +22,9 @@ export type ReceivableRow = {
   sellerId: string;
   payerId: string;
   receivableMetaData: string | null;
-  value: string;
-  proposedValue: string | null;
+  /** API response: reais with 2 decimal places */
+  value: number;
+  proposedValue: number | null;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;

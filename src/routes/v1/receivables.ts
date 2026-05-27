@@ -3,6 +3,7 @@ import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
 
 import type { AppDeps } from "../../application/deps.js";
+import { executeCreateAndSubmitReceivable } from "../../application/receivable/commands/createAndSubmitReceivableCommand.js";
 import { executeCreateReceivable } from "../../application/receivable/commands/createReceivableCommand.js";
 import { executeRiskDecision } from "../../application/receivable/commands/riskDecisionCommand.js";
 import { executeSellerDecision } from "../../application/receivable/commands/sellerDecisionCommand.js";
@@ -34,7 +35,7 @@ const receivableMetaDataSchema = z
     fiscalDocumentKey: z.string().optional(),
     proofType: z.enum(["delivery", "acceptance", "service_provision"]).optional(),
     payerAcceptanceStatus: z.enum(["accepted", "pending", "refused"]).optional(),
-    desiredAnticipationValue: z.number().positive().optional(),
+    desiredAnticipationValue: z.number().positive().multipleOf(0.01).optional(),
     antifraudDeclarationsAccepted: z.boolean().optional(),
   })
   .optional();
@@ -43,18 +44,18 @@ const createBodySchema = z.object({
   payerCnpj: z.string().min(1),
   payerLegalName: z.string().min(1).optional(),
   payerFinancialEmail: z.string().email().optional(),
-  value: z.string().min(1).optional(),
+  value: z.number().nonnegative().multipleOf(0.01).optional(),
   receivableMetaData: receivableMetaDataSchema,
 });
 
 const updateBodySchema = z.object({
-  value: z.string().min(1).optional(),
+  value: z.number().nonnegative().multipleOf(0.01).optional(),
   receivableMetaData: receivableMetaDataSchema,
 });
 
 const riskDecisionBodySchema = z.object({
   decision: z.enum(["offer", "reprove"]),
-  proposedValue: z.string().min(1).optional(),
+  proposedValue: z.number().positive().multipleOf(0.01).optional(),
 });
 
 const sellerDecisionBodySchema = z.object({
@@ -161,6 +162,40 @@ export async function registerReceivableRoutes(
           receivableMetaData: request.body.receivableMetaData,
         });
         return reply.code(201).send({ id });
+      } catch (e) {
+        if (e instanceof SellerError && e.code === SELLER_ERROR_CODES.NOT_ACTIVE) {
+          return reply.code(403).send({ error: "seller_not_active" });
+        }
+        if (e instanceof ReceivableError) return mapReceivableError(reply, e);
+        throw e;
+      }
+    },
+  );
+
+  api.post(
+    "/v1/receivables/submit",
+    {
+      preHandler: requireRoles("seller"),
+      schema: {
+        tags: ["Receivables"],
+        summary: "Create and submit receivable for risk review in one step (seller)",
+        body: createBodySchema,
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    async (request, reply) => {
+      const auth = request.auth!;
+      try {
+        const result = await executeCreateAndSubmitReceivable(deps, {
+          profileId: auth.profileId,
+          payerCnpj: request.body.payerCnpj,
+          payerLegalName: request.body.payerLegalName,
+          payerFinancialEmail: request.body.payerFinancialEmail,
+          value: request.body.value,
+          receivableMetaData: request.body.receivableMetaData,
+          actorRole: auth.role,
+        });
+        return reply.code(201).send(result);
       } catch (e) {
         if (e instanceof SellerError && e.code === SELLER_ERROR_CODES.NOT_ACTIVE) {
           return reply.code(403).send({ error: "seller_not_active" });

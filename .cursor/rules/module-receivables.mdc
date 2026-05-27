@@ -19,8 +19,8 @@ export const receivables = pgTable("receivables", {
   sellerId:           text("seller_id").notNull().references(() => sellers.id),
   payerId:            text("payer_id").notNull().references(() => payers.id),
   receivableMetaData: text("receivable_meta_data"),                // JSON — dados do formulário (ver seção abaixo)
-  value:              text("value").notNull(),                     // valor de face — text decimal, centavos BRL
-  proposedValue:      text("proposed_value"),                      // valor proposto pelo risk_analyst — centavos BRL; preenchido ao entrar em offer
+  value:              text("value").notNull(),                     // valor de face — centavos BRL (text); API I/O em reais — ver money.mdc
+  proposedValue:      text("proposed_value"),                      // valor proposto — centavos BRL (text); API I/O em reais
   createdAt:          timestamp("created_at").notNull().defaultNow(),
   updatedAt:          timestamp("updated_at").notNull().defaultNow(),
   deletedAt:          timestamp("deleted_at"),
@@ -51,7 +51,7 @@ type ReceivableMetaData = {
   fiscalDocumentKey: string;                                       // access key or document number
   proofType: "delivery" | "acceptance" | "service_provision";
   payerAcceptanceStatus: "accepted" | "pending" | "refused";       // payer acceptance status at time of submission
-  desiredAnticipationValue: number;                                // centavos BRL — seller's requested advance amount
+  desiredAnticipationValue: number;                                // JSON armazenado: centavos BRL; API I/O: reais (money.mdc)
   antifraudDeclarationsAccepted: boolean;
 };
 ```

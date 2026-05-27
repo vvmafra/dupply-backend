@@ -36,7 +36,7 @@ async function completedReceivable(deps: Awaited<ReturnType<typeof createTestCon
     receivableId: id,
     actorRole: "risk_analyst",
     decision: "offer",
-    proposedValue: "45000",
+    proposedValue: 450,
   });
   await executeSellerDecision(deps, {
     receivableId: id,

@@ -95,7 +95,7 @@ test("POST /v1/receivables with admin token returns 403", async () => {
         payerCnpj: PAYER_CNPJ,
         payerLegalName: "Payer Corp",
         payerFinancialEmail: "finance@payer.com",
-        value: "50000",
+        value: 500,
       },
     });
     assert.equal(res.statusCode, 403);
@@ -120,7 +120,7 @@ test("POST /v1/receivables with seller token returns 201 draft", async () => {
         payerCnpj: PAYER_CNPJ,
         payerLegalName: "Payer Corp",
         payerFinancialEmail: "finance@payer.com",
-        value: "50000",
+        value: 500,
       },
     });
     assert.equal(res.statusCode, 201);
@@ -147,6 +147,113 @@ test("POST /v1/receivables inactive seller returns 403 seller_not_active", async
         payerCnpj: PAYER_CNPJ,
         payerLegalName: "Payer Corp",
         payerFinancialEmail: "finance@payer.com",
+      },
+    });
+    assert.equal(res.statusCode, 403);
+    assert.deepEqual(res.json(), { error: "seller_not_active" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/submit with admin token returns 403", async () => {
+  const { app, deps, handle, config } = await createTestApp();
+  try {
+    const { id: adminId } = await insertAccount(deps, { role: "admin" });
+    const token = await signToken(config, adminId, "admin");
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: 500,
+        receivableMetaData: completeReceivableMetaData,
+      },
+    });
+    assert.equal(res.statusCode, 403);
+    assert.deepEqual(res.json(), { error: "forbidden" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/submit with complete metadata returns 201 under_review", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email, sellerId } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: 500,
+        receivableMetaData: completeReceivableMetaData,
+      },
+    });
+    assert.equal(res.statusCode, 201);
+    const body = res.json() as { id: string; status: string };
+    assert.equal(body.status, "under_review");
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, body.id));
+    assert.equal(row?.status, "under_review");
+    assert.equal(row?.sellerId, sellerId);
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/submit with incomplete metadata returns 400 incomplete_metadata", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: 500,
+        receivableMetaData: { type: "commercial" },
+      },
+    });
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.json(), { error: "incomplete_metadata" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/submit inactive seller returns 403 seller_not_active", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await insertAccount(deps);
+    const token = await loginAs(app, email);
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: 500,
+        receivableMetaData: completeReceivableMetaData,
       },
     });
     assert.equal(res.statusCode, 403);
@@ -216,7 +323,7 @@ test("POST /v1/receivables/:id/risk-decision with seller token returns 403", asy
       method: "POST",
       url: `/v1/receivables/${randomUUID()}/risk-decision`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { decision: "offer", proposedValue: "900.00" },
+      payload: { decision: "offer", proposedValue: 900 },
     });
     assert.equal(res.statusCode, 403);
     assert.deepEqual(res.json(), { error: "forbidden" });
@@ -248,7 +355,7 @@ test("full draft flow patch and submit", async () => {
       method: "PATCH",
       url: `/v1/receivables/${id}`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { receivableMetaData: completeReceivableMetaData, value: "50000" },
+      payload: { receivableMetaData: completeReceivableMetaData, value: 500 },
     });
     assert.equal(patchRes.statusCode, 200);
 
