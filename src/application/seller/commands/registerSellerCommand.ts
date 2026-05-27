@@ -3,6 +3,7 @@ import argon2 from "argon2";
 
 import type { AppDeps } from "../../deps.js";
 import { accounts, sellers } from "../../../db/schema.runtime.js";
+import { runTransaction } from "../../../db/transaction.js";
 import {
   EMPTY_BUSINESS_RELATIONS_METADATA,
   EMPTY_COMPANY_METADATA,
@@ -23,18 +24,18 @@ export async function executeRegisterSeller(
   const sellerId = createId();
   const passwordHash = await argon2.hash(input.password);
 
-  deps.db.transaction((tx) => {
-    tx.insert(accounts)
-      .values({
+  await runTransaction(deps.db, deps.config.DATABASE_URL, (tx, exec) => {
+    exec(
+      tx.insert(accounts).values({
         id: accountId,
         email: input.email,
         passwordHash,
         role: "seller",
         status: "active",
-      })
-      .run();
-    tx.insert(sellers)
-      .values({
+      }),
+    );
+    exec(
+      tx.insert(sellers).values({
         id: sellerId,
         name: input.name,
         status: "created",
@@ -43,8 +44,8 @@ export async function executeRegisterSeller(
         legalRepresentativeMetaData: EMPTY_LEGAL_REP_METADATA,
         businessRelationsMetaData: EMPTY_BUSINESS_RELATIONS_METADATA,
         walletId: null,
-      })
-      .run();
+      }),
+    );
   });
 
   return { accountId, sellerId };

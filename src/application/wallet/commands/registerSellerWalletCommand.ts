@@ -3,6 +3,7 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import type { AppDeps } from "../../deps.js";
 import { sellers, wallets } from "../../../db/schema.runtime.js";
+import { runTransaction } from "../../../db/transaction.js";
 import type { AccountRole } from "../../../domain/account/types.js";
 import { WALLET_ERROR_CODES, WalletError } from "../../../domain/wallet/errors.js";
 import type { SellerStatus } from "../../../domain/seller/types.js";
@@ -57,9 +58,9 @@ export async function executeRegisterSellerWallet(
   const walletId = createId();
   const now = new Date();
 
-  deps.db.transaction((tx) => {
-    tx.insert(wallets)
-      .values({
+  await runTransaction(deps.db, deps.config.DATABASE_URL, (tx, exec) => {
+    exec(
+      tx.insert(wallets).values({
         id: walletId,
         status: "active",
         network: input.payload.network,
@@ -73,12 +74,14 @@ export async function executeRegisterSellerWallet(
         sellerId: input.sellerId,
         createdAt: now,
         updatedAt: now,
-      })
-      .run();
-    tx.update(sellers)
-      .set({ walletId, updatedAt: now })
-      .where(eq(sellers.id, input.sellerId))
-      .run();
+      }),
+    );
+    exec(
+      tx
+        .update(sellers)
+        .set({ walletId, updatedAt: now })
+        .where(eq(sellers.id, input.sellerId)),
+    );
   });
 
   return toWalletPublicView({
