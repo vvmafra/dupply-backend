@@ -107,3 +107,65 @@ test("soft-deleted seller cannot create receivable", async () => {
     await handle.close();
   }
 });
+
+test("second create with same normalized billNumber throws duplicate_bill_number", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    await executeCreateReceivable(deps, {
+      profileId: sellerId,
+      payerCnpj: PAYER_CNPJ,
+      payerLegalName: "Payer Corp",
+      payerFinancialEmail: "finance@payer.com",
+      receivableMetaData: { billNumber: "abc-1" },
+    });
+
+    await assert.rejects(
+      () =>
+        executeCreateReceivable(deps, {
+          profileId: sellerId,
+          payerCnpj: PAYER_CNPJ,
+          payerLegalName: "Payer Corp",
+          payerFinancialEmail: "finance@payer.com",
+          receivableMetaData: { billNumber: " ABC-1 " },
+        }),
+      (e: unknown) => {
+        assert.ok(e instanceof ReceivableError);
+        assert.equal(e.code, RECEIVABLE_ERROR_CODES.DUPLICATE_BILL_NUMBER);
+        return true;
+      },
+    );
+  } finally {
+    await handle.close();
+  }
+});
+
+test("create after terminal reproved receivable with same keys succeeds", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    const firstId = await executeCreateReceivable(deps, {
+      profileId: sellerId,
+      payerCnpj: PAYER_CNPJ,
+      payerLegalName: "Payer Corp",
+      payerFinancialEmail: "finance@payer.com",
+      receivableMetaData: { billNumber: "DUP-RESUBMIT" },
+    }).then((r) => r.id);
+
+    await deps.db
+      .update(receivables)
+      .set({ status: RECEIVABLE_STATUS.REPROVED, updatedAt: new Date() })
+      .where(eq(receivables.id, firstId));
+
+    const { id: secondId } = await executeCreateReceivable(deps, {
+      profileId: sellerId,
+      payerCnpj: PAYER_CNPJ,
+      payerLegalName: "Payer Corp",
+      payerFinancialEmail: "finance@payer.com",
+      receivableMetaData: { billNumber: "DUP-RESUBMIT" },
+    });
+    assert.notEqual(secondId, firstId);
+  } finally {
+    await handle.close();
+  }
+});

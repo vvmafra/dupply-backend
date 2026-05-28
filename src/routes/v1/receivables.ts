@@ -74,6 +74,8 @@ const RECEIVABLE_ERROR_HTTP: Partial<Record<ReceivableErrorCode, number>> = {
   [RECEIVABLE_ERROR_CODES.PROPOSED_VALUE_FORBIDDEN]: 400,
   [RECEIVABLE_ERROR_CODES.METADATA_LOCKED]: 409,
   [RECEIVABLE_ERROR_CODES.SOFT_DELETED]: 409,
+  [RECEIVABLE_ERROR_CODES.DUPLICATE_BILL_NUMBER]: 409,
+  [RECEIVABLE_ERROR_CODES.DUPLICATE_FISCAL_KEY]: 409,
 };
 
 function mapReceivableError(reply: { code: (status: number) => { send: (body: unknown) => unknown } }, error: ReceivableError) {

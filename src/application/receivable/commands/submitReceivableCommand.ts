@@ -4,11 +4,13 @@ import type { AppDeps } from "../../deps.js";
 import { receivables } from "../../../db/schema.runtime.js";
 import { assertReceivableMetaDataComplete } from "../../../domain/receivable/metadata.js";
 import { assertSellerOwnsReceivable } from "../../../domain/receivable/policies.js";
+import { deriveMaterializedBusinessKeys } from "../../../domain/receivable/businessKey.js";
 import {
   assertReceivableTransition,
   RECEIVABLE_STATUS,
   type ReceivableStatus,
 } from "../../../domain/receivable/transitions.js";
+import { assertNoActiveReceivableDuplicate } from "../duplicateGuard.js";
 import { loadReceivableOrThrow } from "../receivableHelpers.js";
 
 export type SubmitReceivableInput = {
@@ -23,7 +25,14 @@ export async function executeSubmitReceivable(
 ): Promise<void> {
   const row = await loadReceivableOrThrow(deps, input.receivableId);
   assertSellerOwnsReceivable({ profileId: input.profileId }, row);
-  assertReceivableMetaDataComplete(row.receivableMetaData);
+  const meta = assertReceivableMetaDataComplete(row.receivableMetaData);
+  const keys = deriveMaterializedBusinessKeys(meta);
+
+  await assertNoActiveReceivableDuplicate(deps, {
+    sellerId: row.sellerId,
+    keys,
+    excludeReceivableId: input.receivableId,
+  });
 
   const from = row.status as ReceivableStatus;
   assertReceivableTransition(from, RECEIVABLE_STATUS.UNDER_REVIEW, {

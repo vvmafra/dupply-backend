@@ -372,3 +372,182 @@ test("full draft flow patch and submit", async () => {
     await handle.close();
   }
 });
+
+test("POST /v1/receivables duplicate billNumber returns 409 duplicate_bill_number", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+    const payload = {
+      payerCnpj: PAYER_CNPJ,
+      payerLegalName: "Payer Corp",
+      payerFinancialEmail: "finance@payer.com",
+      receivableMetaData: { billNumber: "ROUTE-DUP-1" },
+    };
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload,
+    });
+    assert.equal(first.statusCode, 201);
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        ...payload,
+        receivableMetaData: { billNumber: " route-dup-1 " },
+      },
+    });
+    assert.equal(second.statusCode, 409);
+    assert.deepEqual(second.json(), { error: "duplicate_bill_number" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/submit duplicate returns 409 duplicate_bill_number", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+    const payload = {
+      payerCnpj: PAYER_CNPJ,
+      payerLegalName: "Payer Corp",
+      payerFinancialEmail: "finance@payer.com",
+      value: 500,
+      receivableMetaData: completeReceivableMetaData,
+    };
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${token}` },
+      payload,
+    });
+    assert.equal(first.statusCode, 201);
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        ...payload,
+        receivableMetaData: { ...completeReceivableMetaData, billNumber: " bill-001 " },
+      },
+    });
+    assert.equal(second.statusCode, 409);
+    assert.deepEqual(second.json(), { error: "duplicate_bill_number" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("PATCH /v1/receivables/:id duplicate billNumber returns 409", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+
+    const firstCreate = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        receivableMetaData: { billNumber: "PATCH-DUP-A" },
+      },
+    });
+    const secondCreate = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        receivableMetaData: { billNumber: "PATCH-DUP-B" },
+      },
+    });
+    const { id: secondId } = secondCreate.json() as { id: string };
+    assert.equal(firstCreate.statusCode, 201);
+    assert.equal(secondCreate.statusCode, 201);
+
+    const patchRes = await app.inject({
+      method: "PATCH",
+      url: `/v1/receivables/${secondId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { receivableMetaData: { billNumber: "patch-dup-a" } },
+    });
+    assert.equal(patchRes.statusCode, 409);
+    assert.deepEqual(patchRes.json(), { error: "duplicate_bill_number" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/:id/submit duplicate returns 409", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: 500,
+        receivableMetaData: completeReceivableMetaData,
+      },
+    });
+
+    const draftRes = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        receivableMetaData: { billNumber: "OTHER-SUBMIT-BILL" },
+      },
+    });
+    const { id } = draftRes.json() as { id: string };
+    assert.equal(draftRes.statusCode, 201);
+
+    await deps.db
+      .update(receivables)
+      .set({
+        receivableMetaData: JSON.stringify({
+          ...completeReceivableMetaData,
+          billNumber: "BILL-001",
+          fiscalDocumentKey: "99999999999999999999999999999999999999999999",
+        }),
+        updatedAt: new Date(),
+      })
+      .where(eq(receivables.id, id));
+
+    const submitRes = await app.inject({
+      method: "POST",
+      url: `/v1/receivables/${id}/submit`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(submitRes.statusCode, 409);
+    assert.deepEqual(submitRes.json(), { error: "duplicate_bill_number" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});

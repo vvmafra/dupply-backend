@@ -2,6 +2,11 @@ import { and, eq, isNull } from "drizzle-orm";
 
 import type { AppDeps } from "../deps.js";
 import { payers, receivables } from "../../db/schema.runtime.js";
+import {
+  deriveMaterializedBusinessKeys,
+  normalizeReceivableMetaDataForStorage,
+  type MaterializedBusinessKeys,
+} from "../../domain/receivable/businessKey.js";
 import { parseReceivableMetaData } from "../../domain/receivable/metadata.js";
 import { RECEIVABLE_ERROR_CODES, ReceivableError } from "../../domain/receivable/errors.js";
 import type { ReceivableMetaData, ReceivableRow } from "../../domain/receivable/types.js";
@@ -37,7 +42,17 @@ export function metaStoredToApi(meta: ReceivableMetaData): ReceivableMetaData {
 }
 
 export function stringifyReceivableMetaData(meta: Partial<ReceivableMetaData>): string {
-  return JSON.stringify(metaApiToStored(meta));
+  return JSON.stringify(normalizeReceivableMetaDataForStorage(metaApiToStored(meta)));
+}
+
+export function prepareReceivableMetaDataForWrite(
+  meta: Partial<ReceivableMetaData>,
+): { receivableMetaData: string; materializedKeys: MaterializedBusinessKeys } {
+  const normalized = normalizeReceivableMetaDataForStorage(metaApiToStored(meta));
+  return {
+    receivableMetaData: JSON.stringify(normalized),
+    materializedKeys: deriveMaterializedBusinessKeys(normalized),
+  };
 }
 
 export function mapReceivableMetaDataForApi(raw: string | null): string | null {

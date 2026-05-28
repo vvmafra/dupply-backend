@@ -19,7 +19,7 @@ export async function runTransaction(
       const exec: TxExec = (op) => {
         pending.push(op as Promise<unknown>);
       };
-      fn(tx as Db, exec);
+      fn(tx as unknown as Db, exec);
       await Promise.all(pending);
     });
     return;
@@ -29,6 +29,6 @@ export async function runTransaction(
     const exec: TxExec = (op) => {
       (op as { run: () => void }).run();
     };
-    fn(tx as Db, exec);
+    fn(tx as unknown as Db, exec);
   });
 }

@@ -118,3 +118,40 @@ test("create and submit same seller/payer CNPJ throws SELLER_PAYER_MUST_DIFFER",
     await handle.close();
   }
 });
+
+test("create and submit duplicate complete metadata throws duplicate_bill_number", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    await executeCreateAndSubmitReceivable(deps, {
+      profileId: sellerId,
+      payerCnpj: PAYER_CNPJ,
+      payerLegalName: "Payer Corp",
+      payerFinancialEmail: "finance@payer.com",
+      value: 500,
+      receivableMetaData: completeReceivableMetaData,
+    });
+
+    await assert.rejects(
+      () =>
+        executeCreateAndSubmitReceivable(deps, {
+          profileId: sellerId,
+          payerCnpj: PAYER_CNPJ,
+          payerLegalName: "Payer Corp",
+          payerFinancialEmail: "finance@payer.com",
+          value: 500,
+          receivableMetaData: {
+            ...completeReceivableMetaData,
+            billNumber: " bill-001 ",
+          },
+        }),
+      (e: unknown) => {
+        assert.ok(e instanceof ReceivableError);
+        assert.equal(e.code, RECEIVABLE_ERROR_CODES.DUPLICATE_BILL_NUMBER);
+        return true;
+      },
+    );
+  } finally {
+    await handle.close();
+  }
+});

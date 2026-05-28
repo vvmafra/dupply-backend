@@ -59,3 +59,43 @@ test("submit with incomplete metadata throws INCOMPLETE_METADATA", async () => {
     await handle.close();
   }
 });
+
+test("submit blocked when keys collide with another active receivable", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    await createDraftReceivable(deps, sellerId, {
+      receivableMetaData: { billNumber: "SUBMIT-COLLIDE" },
+    });
+    const secondId = await createDraftReceivable(deps, sellerId, {
+      receivableMetaData: { billNumber: "OTHER-BILL" },
+    });
+    await deps.db
+      .update(receivables)
+      .set({
+        receivableMetaData: JSON.stringify({
+          ...completeReceivableMetaData,
+          billNumber: "SUBMIT-COLLIDE",
+          fiscalDocumentKey: "99999999999999999999999999999999999999999999",
+        }),
+        updatedAt: new Date(),
+      })
+      .where(eq(receivables.id, secondId));
+
+    await assert.rejects(
+      () =>
+        executeSubmitReceivable(deps, {
+          receivableId: secondId,
+          profileId: sellerId,
+          actorRole: "seller",
+        }),
+      (e: unknown) => {
+        assert.ok(e instanceof ReceivableError);
+        assert.equal(e.code, RECEIVABLE_ERROR_CODES.DUPLICATE_BILL_NUMBER);
+        return true;
+      },
+    );
+  } finally {
+    await handle.close();
+  }
+});

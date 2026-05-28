@@ -8,6 +8,8 @@ export const RECEIVABLE_ERROR_CODES = {
   PROPOSED_VALUE_REQUIRED: "proposed_value_required_for_offer",
   PROPOSED_VALUE_FORBIDDEN: "proposed_value_not_allowed_for_reprove",
   SOFT_DELETED: "receivable_deleted",
+  DUPLICATE_BILL_NUMBER: "duplicate_bill_number",
+  DUPLICATE_FISCAL_KEY: "duplicate_fiscal_document_key",
 } as const;
 
 export type ReceivableErrorCode =

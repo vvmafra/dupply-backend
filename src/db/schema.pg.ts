@@ -177,6 +177,8 @@ export const receivables = pgTable(
     sellerId: text("seller_id").notNull().references(() => sellers.id),
     payerId: text("payer_id").notNull().references(() => payers.id),
     receivableMetaData: text("receivable_meta_data"),
+    normalizedBillNumber: text("normalized_bill_number"),
+    normalizedFiscalDocumentKey: text("normalized_fiscal_document_key"),
     value: text("value").notNull(),
     proposedValue: text("proposed_value"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
@@ -187,6 +189,22 @@ export const receivables = pgTable(
     index("receivables_seller_id_idx").on(t.sellerId),
     index("receivables_payer_id_idx").on(t.payerId),
     index("receivables_status_idx").on(t.status),
+    index("receivables_seller_bill_idx").on(t.sellerId, t.normalizedBillNumber),
+    index("receivables_seller_fiscal_key_idx").on(t.sellerId, t.normalizedFiscalDocumentKey),
+    uniqueIndex("receivables_seller_bill_active_unique")
+      .on(t.sellerId, t.normalizedBillNumber)
+      .where(
+        sql`${t.deletedAt} IS NULL
+          AND ${t.normalizedBillNumber} IS NOT NULL
+          AND ${t.status} IN ('created','under_review','offer','approved','confirmed','processing','completed','overdue')`,
+      ),
+    uniqueIndex("receivables_seller_fiscal_key_active_unique")
+      .on(t.sellerId, t.normalizedFiscalDocumentKey)
+      .where(
+        sql`${t.deletedAt} IS NULL
+          AND ${t.normalizedFiscalDocumentKey} IS NOT NULL
+          AND ${t.status} IN ('created','under_review','offer','approved','confirmed','processing','completed','overdue')`,
+      ),
   ],
 );
 
