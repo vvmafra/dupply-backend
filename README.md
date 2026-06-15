@@ -94,6 +94,8 @@ Not shipped as code. See **[indexer/README.md](indexer/README.md)** for intent a
 - **Default dev:** SQLite (`DATABASE_URL=file:./data/dupply.db`).
 - **Supabase (recommended for shared dev / frontend data):** set `DATABASE_URL` to the Supabase Postgres URI, then `npm run db:push`. Account seeding is deferred to the seller module PRD. Step-by-step: [`docs/notes/2026-05-20_supabase-setup.md`](docs/notes/2026-05-20_supabase-setup.md).
 - **Local Docker Postgres:** [docker/README.md](docker/README.md).
+- **Reset dev DB (wipe + schema + seed):** stop the API, then `npm run db:reset` (Postgres local: drop/recreate DB; SQLite: delete file + migrate). Remote Postgres requires `ALLOW_REMOTE_DB_RESET=1`. **Never use on production.**
+- **Deploy schema (staging/prod — keeps data):** `CONFIRM_DB_DEPLOY=1 DATABASE_URL='postgresql://...' npm run db:deploy` (wraps `db:push` with remote confirmation).
 
 ---
 

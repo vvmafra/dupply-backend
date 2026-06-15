@@ -104,6 +104,23 @@ npm run db:migrate
 
 (For local dev you may use `npm run db:push` instead.)
 
+**Reset dev database** (wipe + schema + seed — like Prisma migrate reset):
+
+```bash
+# Stop npm run dev first (active connections block Postgres DROP DATABASE)
+npm run db:reset
+```
+
+Remote Postgres (e.g. Supabase) requires `ALLOW_REMOTE_DB_RESET=1`. Production requires `FORCE_DB_RESET=1`. **Do not use db:reset in production.**
+
+**Deploy schema to staging/production** (schema only — **preserves data**, no seed):
+
+```bash
+CONFIRM_DB_DEPLOY=1 DATABASE_URL='postgresql://...@....supabase.com:5432/postgres' npm run db:deploy
+```
+
+Same as `npm run db:push`, with a confirmation gate for non-local hosts.
+
 ## Regenerate contract TypeScript bindings
 
 After changing Rust and running `stellar contract build`, generate TypeScript from the Wasm and **replace** `src/generated/trade-bill-registry-contract.ts` (fix `import type` if the CLI emits mixed imports — this project uses `verbatimModuleSyntax`).
