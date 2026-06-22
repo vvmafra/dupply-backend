@@ -4,12 +4,10 @@ import test from "node:test";
 import { eq } from "drizzle-orm";
 
 import { executeSystemAdvanceSettlement } from "../../../src/application/receivable/commands/systemAdvanceSettlementCommand.js";
-import { executePayerMagicLinkRespond } from "../../../src/application/receivable/commands/payerMagicLinkRespondCommand.js";
 import { executeRiskDecision } from "../../../src/application/receivable/commands/riskDecisionCommand.js";
 import { executeSellerDecision } from "../../../src/application/receivable/commands/sellerDecisionCommand.js";
 import { executeSubmitReceivable } from "../../../src/application/receivable/commands/submitReceivableCommand.js";
 import { executeUpdateReceivableDraft } from "../../../src/application/receivable/commands/updateReceivableDraftCommand.js";
-import { encodeStubMagicLinkToken } from "../../../src/application/payer/ports/magicLinkToken.js";
 import { receivables } from "../../../src/db/schema.runtime.js";
 import { RECEIVABLE_STATUS } from "../../../src/domain/receivable/transitions.js";
 import {
@@ -43,9 +41,6 @@ async function confirmedReceivable(deps: Awaited<ReturnType<typeof createTestCon
     actorRole: "seller",
     decision: "accept",
   });
-  const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
-  const token = encodeStubMagicLinkToken({ receivableId: id, payerId: row!.payerId });
-  await executePayerMagicLinkRespond(deps, { token, decision: "accept" });
   return id;
 }
 
@@ -54,6 +49,8 @@ test("system advance confirmed → processing → completed", async () => {
   try {
     const { sellerId } = await setupActiveSeller(deps);
     const id = await confirmedReceivable(deps, sellerId);
+    const [confirmedRow] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(confirmedRow?.status, RECEIVABLE_STATUS.CONFIRMED);
     await executeSystemAdvanceSettlement(deps, {
       receivableId: id,
       targetStatus: RECEIVABLE_STATUS.PROCESSING,

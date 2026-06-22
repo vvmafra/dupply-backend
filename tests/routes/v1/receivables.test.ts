@@ -314,6 +314,65 @@ test("GET /v1/receivables as seller returns only own receivables", async () => {
   }
 });
 
+test("POST seller-decision accept transitions offer to confirmed", async () => {
+  const { app, deps, handle, config } = await createTestApp();
+  try {
+    const { email, sellerId } = await setupActiveSeller(deps);
+    const sellerToken = await loginAs(app, email);
+
+    const submitRes = await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${sellerToken}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: 500,
+        receivableMetaData: completeReceivableMetaData,
+      },
+    });
+    assert.equal(submitRes.statusCode, 201);
+    const { id } = submitRes.json() as { id: string };
+
+    const { id: analystId } = await insertAccount(deps, { role: "risk_analyst" });
+    const analystToken = await signToken(config, analystId, "risk_analyst");
+
+    const riskRes = await app.inject({
+      method: "POST",
+      url: `/v1/receivables/${id}/risk-decision`,
+      headers: { authorization: `Bearer ${analystToken}` },
+      payload: { decision: "offer", proposedValue: 450 },
+    });
+    assert.equal(riskRes.statusCode, 200);
+
+    const acceptRes = await app.inject({
+      method: "POST",
+      url: `/v1/receivables/${id}/seller-decision`,
+      headers: { authorization: `Bearer ${sellerToken}` },
+      payload: { decision: "accept" },
+    });
+    assert.equal(acceptRes.statusCode, 200);
+    assert.deepEqual(acceptRes.json(), { ok: true });
+
+    const getRes = await app.inject({
+      method: "GET",
+      url: `/v1/receivables/${id}`,
+      headers: { authorization: `Bearer ${sellerToken}` },
+    });
+    assert.equal(getRes.statusCode, 200);
+    const body = getRes.json() as { receivable: { status: string; sellerId: string } };
+    assert.equal(body.receivable.status, "confirmed");
+    assert.equal(body.receivable.sellerId, sellerId);
+
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.status, "confirmed");
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
 test("POST /v1/receivables/:id/risk-decision with seller token returns 403", async () => {
   const { app, deps, handle } = await createTestApp();
   try {

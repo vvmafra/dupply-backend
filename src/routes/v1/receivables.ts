@@ -301,7 +301,7 @@ export async function registerReceivableRoutes(
     {
       schema: {
         tags: ["Receivables"],
-        summary: "Seller accepts or rejects analyst offer",
+        summary: "Seller accepts or rejects analyst offer (accept → confirmed)",
         params: idParamsSchema,
         body: sellerDecisionBodySchema,
         security: [{ bearerAuth: [] }],

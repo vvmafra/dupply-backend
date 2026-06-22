@@ -38,7 +38,25 @@ async function offerDraft(deps: Awaited<ReturnType<typeof createTestContext>>["d
   return id;
 }
 
-test("seller accept transitions offer → approved", async () => {
+test("seller reject transitions offer → rejected", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    const id = await offerDraft(deps, sellerId);
+    await executeSellerDecision(deps, {
+      receivableId: id,
+      profileId: sellerId,
+      actorRole: "seller",
+      decision: "reject",
+    });
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.status, RECEIVABLE_STATUS.REJECTED);
+  } finally {
+    await handle.close();
+  }
+});
+
+test("seller accept transitions offer → confirmed", async () => {
   const { deps, handle } = await createTestContext();
   try {
     const { sellerId } = await setupActiveSeller(deps);
@@ -50,7 +68,40 @@ test("seller accept transitions offer → approved", async () => {
       decision: "accept",
     });
     const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
-    assert.equal(row?.status, RECEIVABLE_STATUS.APPROVED);
+    assert.equal(row?.status, RECEIVABLE_STATUS.CONFIRMED);
+  } finally {
+    await handle.close();
+  }
+});
+
+test("notification failure does not fail seller accept", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    const id = await offerDraft(deps, sellerId);
+    let warnCalled = false;
+    await executeSellerDecision(
+      {
+        ...deps,
+        notifyPayerReceivableConfirmed: async () => {
+          throw new Error("notification failed");
+        },
+        logger: {
+          warn: () => {
+            warnCalled = true;
+          },
+        },
+      },
+      {
+        receivableId: id,
+        profileId: sellerId,
+        actorRole: "seller",
+        decision: "accept",
+      },
+    );
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.status, RECEIVABLE_STATUS.CONFIRMED);
+    assert.equal(warnCalled, true);
   } finally {
     await handle.close();
   }

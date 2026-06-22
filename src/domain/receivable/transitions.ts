@@ -5,13 +5,17 @@ export const RECEIVABLE_STATUS = {
   REPROVED: "reproved",
   OFFER: "offer",
   REJECTED: "rejected",
-  APPROVED: "approved",
-  PAYER_REJECTED: "payer_rejected",
   CONFIRMED: "confirmed",
   PROCESSING: "processing",
   COMPLETED: "completed",
   PAYER_SETTLED: "payer_settled",
   OVERDUE: "overdue",
+} as const;
+
+/** Historical DB values — no new transitions; still returned by GET (OQ-3). */
+export const LEGACY_RECEIVABLE_STATUSES = {
+  APPROVED: "approved",
+  PAYER_REJECTED: "payer_rejected",
 } as const;
 
 export type ReceivableStatus = (typeof RECEIVABLE_STATUS)[keyof typeof RECEIVABLE_STATUS];
@@ -26,10 +30,7 @@ export const PLATFORM_ROLES = {
 
 export type PlatformRole = (typeof PLATFORM_ROLES)[keyof typeof PLATFORM_ROLES];
 
-export type TransitionActor =
-  | { kind: "system" }
-  | { kind: "user"; role: string }
-  | { kind: "payer_magic_link" };
+export type TransitionActor = { kind: "system" } | { kind: "user"; role: string };
 
 export class ReceivableTransitionError extends Error {
   readonly code = "invalid_receivable_transition";
@@ -94,16 +95,6 @@ export function assertReceivableTransition(
     throw new ReceivableTransitionError("invalid_system_transition");
   }
 
-  if (actor.kind === "payer_magic_link") {
-    if (from === RECEIVABLE_STATUS.APPROVED && to === RECEIVABLE_STATUS.CONFIRMED) {
-      return;
-    }
-    if (from === RECEIVABLE_STATUS.APPROVED && to === RECEIVABLE_STATUS.PAYER_REJECTED) {
-      return;
-    }
-    throw new ReceivableTransitionError("transition_not_allowed");
-  }
-
   if (actor.kind !== "user") {
     throw new ReceivableTransitionError("user_actor_required");
   }
@@ -127,7 +118,7 @@ export function assertReceivableTransition(
   }
 
   if (from === RECEIVABLE_STATUS.OFFER) {
-    if (to === RECEIVABLE_STATUS.APPROVED || to === RECEIVABLE_STATUS.REJECTED) {
+    if (to === RECEIVABLE_STATUS.CONFIRMED || to === RECEIVABLE_STATUS.REJECTED) {
       if (!isSellerRole(role)) {
         throw new ReceivableTransitionError("seller_role_required");
       }
@@ -139,7 +130,10 @@ export function assertReceivableTransition(
 }
 
 export function isReceivableStatus(value: string): value is ReceivableStatus {
-  return (Object.values(RECEIVABLE_STATUS) as string[]).includes(value);
+  return (
+    (Object.values(RECEIVABLE_STATUS) as string[]).includes(value) ||
+    (Object.values(LEGACY_RECEIVABLE_STATUSES) as string[]).includes(value)
+  );
 }
 
 export function isPlatformRole(value: string): value is PlatformRole {

@@ -3,6 +3,8 @@ import test from "node:test";
 
 import {
   assertReceivableTransition,
+  isReceivableStatus,
+  LEGACY_RECEIVABLE_STATUSES,
   PLATFORM_ROLES,
   RECEIVABLE_STATUS,
   ReceivableTransitionError,
@@ -55,8 +57,8 @@ test("risk cannot move under_review → rejected", () => {
   );
 });
 
-test("seller accepts or rejects offer", () => {
-  assertReceivableTransition(RECEIVABLE_STATUS.OFFER, RECEIVABLE_STATUS.APPROVED, {
+test("seller accepts offer → confirmed or rejects → rejected", () => {
+  assertReceivableTransition(RECEIVABLE_STATUS.OFFER, RECEIVABLE_STATUS.CONFIRMED, {
     kind: "user",
     role: PLATFORM_ROLES.SELLER,
   });
@@ -66,13 +68,38 @@ test("seller accepts or rejects offer", () => {
   });
 });
 
-test("payer magic link accept/reject from approved", () => {
-  assertReceivableTransition(RECEIVABLE_STATUS.APPROVED, RECEIVABLE_STATUS.CONFIRMED, {
-    kind: "payer_magic_link",
-  });
-  assertReceivableTransition(RECEIVABLE_STATUS.APPROVED, RECEIVABLE_STATUS.PAYER_REJECTED, {
-    kind: "payer_magic_link",
-  });
+test("seller accept removed path offer → approved throws", () => {
+  assert.throws(
+    () =>
+      assertReceivableTransition(
+        RECEIVABLE_STATUS.OFFER,
+        LEGACY_RECEIVABLE_STATUSES.APPROVED as never,
+        {
+          kind: "user",
+          role: PLATFORM_ROLES.SELLER,
+        },
+      ),
+    ReceivableTransitionError,
+  );
+});
+
+test("payer_magic_link actor no longer authorizes any transition", () => {
+  assert.throws(
+    () =>
+      assertReceivableTransition(RECEIVABLE_STATUS.OFFER, RECEIVABLE_STATUS.CONFIRMED, {
+        kind: "payer_magic_link",
+      } as never),
+    ReceivableTransitionError,
+  );
+  assert.throws(
+    () =>
+      assertReceivableTransition(
+        RECEIVABLE_STATUS.OFFER,
+        RECEIVABLE_STATUS.REJECTED,
+        { kind: "payer_magic_link" } as never,
+      ),
+    ReceivableTransitionError,
+  );
 });
 
 test("system advance confirmed → processing → completed", () => {
@@ -118,6 +145,12 @@ test("terminal re-entry reproved → under_review throws", () => {
   );
 });
 
-test("all 12 statuses exist", () => {
-  assert.equal(Object.keys(RECEIVABLE_STATUS).length, 12);
+test("RECEIVABLE_STATUS has exactly 10 active statuses", () => {
+  assert.equal(Object.keys(RECEIVABLE_STATUS).length, 10);
+});
+
+test("isReceivableStatus accepts legacy historical values", () => {
+  assert.equal(isReceivableStatus(LEGACY_RECEIVABLE_STATUSES.APPROVED), true);
+  assert.equal(isReceivableStatus(LEGACY_RECEIVABLE_STATUSES.PAYER_REJECTED), true);
+  assert.equal(isReceivableStatus("unknown_status"), false);
 });

@@ -1,12 +1,12 @@
 ---
-description: Módulo payer — entidade sacado, autenticação via magic link, confirmação de receivable
+description: Módulo payer — entidade sacado, notificação informativa, upsert por CNPJ
 globs: src/routes/v1/payers*,src/domain/payer/**,src/application/payer/**
 alwaysApply: false
 ---
 
 # Módulo 4 — payer
 
-O **sacado** é a empresa compradora que emitiu a duplicata ao cedente (seller). O payer é notificado sobre a antecipação e precisa confirmar o aceite para que o fluxo de liquidação prossiga.
+O **sacado** é a empresa compradora que emitiu a duplicata ao cedente (seller). O payer é **notificado informativamente** quando uma antecipação é confirmada pelo seller — **sem ação obrigatória** para desbloquear o fluxo de liquidação.
 
 ---
 
@@ -36,27 +36,28 @@ export const payers = pgTable("payers", {
 
 ---
 
-## Autenticação — magic link
+## Notificação informativa (substitui confirmação via magic link)
 
-O payer não faz login. Ele recebe um **magic link** por email quando um receivable entra em status `offer`.
+O payer **não confirma** mais a antecipação para desbloquear o fluxo. A confirmação operacional ocorre quando o **seller aceita** a proposta do analista (`offer → confirmed`).
 
 ```
-Fluxo:
-1. risk_analyst move receivable de under_review → offer
-2. Sistema gera um token de magic link vinculado ao receivable + payerId
-3. Email enviado ao payer.email com o link
-4. Payer clica no link → token validado → payer confirma ou rejeita
-5. Sistema move receivable de offer → confirmed (ou mantém/cancela conforme regra)
+Fluxo atual:
+1. Seller aceita proposta (seller-decision accept)
+2. Receivable transita para confirmed
+3. Sistema envia email informativo ao payer.email (duplicata descontada; pagar Dupply no vencimento)
+4. Falha no email NÃO reverte a transição (best-effort)
+5. Liquidação prossegue via rotas internas (confirmed → processing → …)
 ```
 
-**Token de magic link:**
-- Gerado na aplicação (CSPRNG, 32 bytes, base64url).
-- Armazenado em tabela separada: `payer_magic_tokens` (id, payerId, receivableId, token_hash, expiresAt, usedAt).
-- Expiração: 72h (configurável).
-- De uso único — `usedAt` é setado na primeira utilização.
-- **Não armazenar token em claro** — guardar apenas o hash (SHA-256).
+**Hook de aplicação:** `notifyPayerReceivableConfirmed` em `src/application/payer/ports/receivableNotification.ts` (stub até Module 4 implementar transporte/templates).
 
-### Schema da tabela auxiliar
+### Magic link — fluxo descontinuado
+
+O fluxo anterior (payer aceita/recusa via magic link após `approved`) foi **removido**. A rota `POST /v1/payers/magic-link/respond` retorna **410 Gone** (`payer_confirmation_removed`).
+
+Infraestrutura de token (`payer_magic_tokens`, `magicLinkToken.ts`) pode ser reutilizada futuramente para links informativos somente leitura — fora do escopo da remoção do gate.
+
+### Schema da tabela auxiliar (planejado — Module 4)
 
 ```typescript
 export const payerMagicTokens = pgTable("payer_magic_tokens", {
@@ -81,7 +82,13 @@ export const payerMagicTokens = pgTable("payer_magic_tokens", {
 
 ---
 
-## Rotas planejadas
+## Rotas
+
+| Método | Rota | Actor | Descrição |
+|---|---|---|---|
+| POST | `/v1/payers/magic-link/respond` | — | **410 Gone** — confirmação removida (deprecated) |
+
+### Rotas planejadas (Module 4)
 
 | Método | Rota | Actor | Descrição |
 |---|---|---|---|
@@ -89,12 +96,10 @@ export const payerMagicTokens = pgTable("payer_magic_tokens", {
 | GET | `/v1/payers` | admin | Lista payers |
 | PATCH | `/v1/payers/:id` | admin | Atualiza dados do payer |
 | DELETE | `/v1/payers/:id` | admin | Soft delete |
-| POST | `/v1/payers/magic-link/verify` | público (com token) | Valida magic link e retorna contexto do receivable |
-| POST | `/v1/payers/magic-link/confirm` | público (com token) | Payer confirma aceite do receivable |
 
 ---
 
 ## Dependências
 
 - **Módulo 1** (account) — nenhuma FK direta, mas o sistema de autenticação usa os mesmos middlewares.
-- **Módulo 5** (receivable) — `payer_magic_tokens` tem FK para `receivables`.
+- **Módulo 5** (receivable) — notificação disparada em `confirmed`; `payerId` FK no receivable.

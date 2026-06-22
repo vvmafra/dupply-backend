@@ -3,12 +3,17 @@ import test from "node:test";
 
 import {
   deriveMaterializedBusinessKeys,
+  DUPLICATE_BLOCKING_STATUSES,
+  DUPLICATE_TERMINAL_STATUSES,
   isDuplicateBlockingStatus,
   normalizeBillNumber,
   normalizeFiscalDocumentKey,
   normalizeReceivableMetaDataForStorage,
 } from "../../../src/domain/receivable/businessKey.js";
-import { RECEIVABLE_STATUS } from "../../../src/domain/receivable/transitions.js";
+import {
+  LEGACY_RECEIVABLE_STATUSES,
+  RECEIVABLE_STATUS,
+} from "../../../src/domain/receivable/transitions.js";
 
 test("normalizeBillNumber trims and uppercases", () => {
   assert.equal(normalizeBillNumber(" dup-001 "), "DUP-001");
@@ -59,6 +64,35 @@ test("isDuplicateBlockingStatus false for reproved", () => {
 
 test("isDuplicateBlockingStatus true for completed", () => {
   assert.equal(isDuplicateBlockingStatus(RECEIVABLE_STATUS.COMPLETED), true);
+});
+
+test("DUPLICATE_BLOCKING_STATUSES does not include approved", () => {
+  assert.equal(
+    (DUPLICATE_BLOCKING_STATUSES as readonly string[]).includes(
+      LEGACY_RECEIVABLE_STATUSES.APPROVED,
+    ),
+    false,
+  );
+});
+
+test("DUPLICATE_BLOCKING_STATUSES includes confirmed", () => {
+  assert.equal(
+    (DUPLICATE_BLOCKING_STATUSES as readonly string[]).includes(RECEIVABLE_STATUS.CONFIRMED),
+    true,
+  );
+});
+
+test("DUPLICATE_TERMINAL_STATUSES does not include payer_rejected", () => {
+  assert.equal(
+    (DUPLICATE_TERMINAL_STATUSES as readonly string[]).includes(
+      LEGACY_RECEIVABLE_STATUSES.PAYER_REJECTED,
+    ),
+    false,
+  );
+});
+
+test("historical payer_rejected is non-blocking for duplicate guard", () => {
+  assert.equal(isDuplicateBlockingStatus(LEGACY_RECEIVABLE_STATUSES.PAYER_REJECTED), false);
 });
 
 test("normalizeReceivableMetaDataForStorage normalizes identifying fields", () => {

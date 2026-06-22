@@ -64,6 +64,13 @@
       "when": 1779800000000,
       "tag": "0008_receivable_duplicate_guard",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1779900000000,
+      "tag": "0009_remove_payer_confirmation_gate",
+      "breakpoints": true
     }
   ]
 }

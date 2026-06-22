@@ -63,7 +63,8 @@ npm run dev
   - `GET /v1/wallets/:id` — seller (own wallet) or admin.
   - `PATCH /v1/wallets/:id/status` — admin; body `{ "status": "active" | "inactive" }`.
 - **Receivables** (`Authorization: Bearer <accessToken>`):
-  - Lifecycle v2: `created` → `under_review` → `offer` | `reproved`; `offer` → `approved` | `rejected` (seller decision); payer confirmation and platform settlement are separate flows (magic link + internal routes).
+  - Lifecycle v2 (10 statuses): `created` → `under_review` → `offer` | `reproved`; `offer` → `confirmed` | `rejected` (seller decision); payer receives an **informational notification** on `confirmed` (no action required); platform settlement via internal routes (`confirmed → processing → completed → payer_settled` | `overdue`). Legacy statuses `approved` and `payer_rejected` may appear on historical rows only.
+  - **Breaking change:** clients that expected `status = approved` after seller accept must handle `confirmed`. On-chain registry (`registry_on_chain`) is triggered on `confirmed` (documented; runtime hook pending Module 7).
   - **Money:** `value`, `proposedValue`, and `desiredAnticipationValue` (inside `receivableMetaData`) are **reais** in JSON request/response (e.g. `150000.00`); stored as centavos in DB — see money convention above.
   - `GET /v1/receivables` — **seller** (own rows); **admin** / **risk_analyst** / **risk_analyst_agent** (all non-deleted, up to 200). Returns `{ "receivables": ReceivableRow[] }`.
   - `GET /v1/receivables/:id` — **seller** (own), **admin**, **risk_analyst**, **risk_analyst_agent**; payer role forbidden. Returns `{ "receivable": ReceivableRow }`.
@@ -72,7 +73,7 @@ npm run dev
   - `PATCH /v1/receivables/:id` — **seller** (own); body `{ "value"?, "receivableMetaData"? }`; only when `status=created`; returns `{ "ok": true }`.
   - `POST /v1/receivables/:id/submit` — **seller** (own); validates metadata completeness; transitions `created` → `under_review`; returns `{ "ok": true }`.
   - `POST /v1/receivables/:id/risk-decision` — **risk_analyst** or **risk_analyst_agent**; body `{ "decision": "offer" | "reprove", "proposedValue"? }` (`proposedValue` required when `decision` is `offer`); returns `{ "ok": true }`.
-  - `POST /v1/receivables/:id/seller-decision` — **seller** (own); body `{ "decision": "accept" | "reject" }` when `status=offer`; returns `{ "ok": true }`.
+  - `POST /v1/receivables/:id/seller-decision` — **seller** (own); body `{ "decision": "accept" | "reject" }` when `status=offer`; `accept` → `confirmed`, `reject` → `rejected`; returns `{ "ok": true }`.
   - **Known errors** (`{ "error": "<code>" }` unless noted):
     - `seller_not_active` — `403`; seller not `active` on create/submit.
     - `incomplete_metadata` — `400`; submit without required metadata fields.
@@ -83,6 +84,8 @@ npm run dev
     - Also: `receivable_not_found` (`404`), `not_owner` / `forbidden` (`403`), `receivable_deleted` (`409`), `proposed_value_not_allowed_for_reprove` (`400`).
 - **Internal settlement** (`X-Dupply-Api-Key` only — workers / BFF; not for end users):  
   - `POST /v1/internal/receivables/:id/advance-settlement` — body `{ "targetStatus": "processing" | "completed" }`; enforces `confirmed` → `processing` → `completed` with **system** transition rules.
+- **Payers** (deprecated confirmation flow):
+  - `POST /v1/payers/magic-link/respond` — **410 Gone** (`payer_confirmation_removed`). Payer confirmation no longer gates settlement; seller accept moves the receivable directly to `confirmed`. Route kept temporarily for consumer migration.
 - **Ramp** (`X-Dupply-Api-Key`): `GET /v1/ramp/assets`, `POST /v1/ramp/quotes`, `POST /v1/ramp/orders`, `GET /v1/ramp/orders/:id`.
 - **Trade bills** (`X-Dupply-Api-Key`):  
   - `POST /v1/trade-bills` — validates payload, simulates `issue`, stores draft, returns `unsignedTransactionXdr`.  

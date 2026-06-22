@@ -67,9 +67,7 @@ created ──► under_review ──► reproved             (terminal — anal
                         │
                         └──► offer ──► rejected    (terminal — seller recusou proposta)
                                    │
-                                   └──► approved ──► payer_rejected  (terminal — payer recusou via magic link)
-                                                 │
-                                                 └──► confirmed ──► processing ──► completed ──► payer_settled  (terminal)
+                                   └──► confirmed ──► processing ──► completed ──► payer_settled  (terminal)
                                                                                                │
                                                                                                └──► overdue ──► payer_settled  (pago em atraso — terminal)
 ```
@@ -81,13 +79,22 @@ created ──► under_review ──► reproved             (terminal — anal
 | `reproved` | `risk_analyst` / `risk_analyst_agent` | Analista recusou a duplicata. **Terminal.** |
 | `offer` | `risk_analyst` / `risk_analyst_agent` | Analista fez proposta de valor (`proposedValue` preenchido) |
 | `rejected` | `seller` | Seller recusou a proposta do analista. **Terminal.** |
-| `approved` | `seller` | Seller aceitou a proposta; sistema envia magic link ao payer |
-| `payer_rejected` | `payer` (magic link) | Payer recusou via magic link. **Terminal.** |
-| `confirmed` | `payer` (magic link) | Payer aceitou via magic link; pronto para liquidação |
+| `confirmed` | `seller` | Seller aceitou a proposta; pronto para liquidação; payer recebe notificação informativa (sem ação obrigatória) |
 | `processing` | sistema | Plataforma está transferindo o valor antecipado ao seller |
 | `completed` | sistema | Seller recebeu o valor antecipado. Plataforma aguarda pagamento do payer no vencimento. |
 | `payer_settled` | sistema | Payer pagou a plataforma. Ciclo 100% concluído. **Terminal.** |
 | `overdue` | sistema | Payer não pagou no vencimento. Acionar cobrança. Pode avançar para `payer_settled` se pagar em atraso. |
+
+### Status legados (somente leitura)
+
+Valores históricos podem ainda existir no banco após migrações anteriores. **Não há transições de saída** e nenhum receivable novo pode entrar nesses status:
+
+| Status legado | Origem |
+|---|---|
+| `approved` | Migrado automaticamente para `confirmed` |
+| `payer_rejected` | Terminal histórico — payer recusou via magic link (fluxo descontinuado) |
+
+---
 
 ### Detalhes importantes
 
@@ -98,7 +105,7 @@ created ──► under_review ──► reproved             (terminal — anal
 - `rejected` = seller recusou a proposta de valor (elegível, mas seller não aceitou os termos).
 - Ambos são terminais sem reativação em v1.
 
-**`payer_rejected`** — payer clicou em "recusar" no magic link. Terminal. O envio de notificações pós-rejeição (email ao seller, etc.) é responsabilidade do Módulo 4 (payer).
+**Confirmação do payer removida** — o payer **não bloqueia** o fluxo. Quando o seller aceita a proposta (`offer → confirmed`), o sistema envia notificação informativa ao payer (email — Módulo 4). Falha na notificação **não** reverte a transição.
 
 **`created` drafts** — ficam no banco indefinidamente enquanto `status = 'created'`. Sem expiração automática em v1. Seller não pode fazer soft delete de um draft.
 
@@ -118,10 +125,8 @@ created ──► under_review ──► reproved             (terminal — anal
 | `created` | `under_review` | `seller` (submete o formulário) |
 | `under_review` | `offer` | `risk_analyst` ou `risk_analyst_agent` |
 | `under_review` | `reproved` | `risk_analyst` ou `risk_analyst_agent` |
-| `offer` | `approved` | `seller` (aceita a proposta) |
+| `offer` | `confirmed` | `seller` (aceita a proposta) |
 | `offer` | `rejected` | `seller` (recusa a proposta) |
-| `approved` | `confirmed` | `payer` via magic link (`payer_magic_link` actor kind) |
-| `approved` | `payer_rejected` | `payer` via magic link (`payer_magic_link` actor kind) |
 | `confirmed` | `processing` | **sistema** (`X-Dupply-Api-Key` only) |
 | `processing` | `completed` | **sistema** (`X-Dupply-Api-Key` only) |
 | `completed` | `payer_settled` | **sistema** (`X-Dupply-Api-Key` only) |
@@ -150,16 +155,17 @@ if (req.user.role !== 'risk_analyst') throw ...
 type TransitionActor =
   | { kind: "system" }                  // X-Dupply-Api-Key callers
   | { kind: "user"; role: string }      // JWT callers (seller, risk_analyst, admin…)
-  | { kind: "payer_magic_link" }        // token de magic link (módulo 4)
 ```
+
+> O actor `payer_magic_link` foi **removido** — payer não autoriza transições de status.
 
 ---
 
 ## Relação com tokenização (Módulo 7)
 
-- `registry_on_chain` é criado quando o receivable entra em **`approved`** — ponto em que seller e analista estão alinhados e a operação definitivamente prosseguirá.
+- `registry_on_chain` é criado quando o receivable entra em **`confirmed`** — ponto em que seller e analista estão alinhados e a operação definitivamente prosseguirá.
 - FK: `registry_on_chain.receivableId → receivables.id` (optional em v1, obrigatório no fluxo completo).
-- A tokenização deve ocorrer **antes** de enviar o magic link ao payer.
+- A tokenização deve ocorrer **no momento da confirmação** (após seller aceitar a proposta).
 - Ver `module-registry.mdc` para o ciclo de vida interno da tokenização (`simulated → confirmed → failed`).
 
 ---
@@ -174,12 +180,17 @@ Todas as rotas seguem o padrão de `routes-swagger.mdc`: `app.withTypeProvider<Z
 | PATCH | `/v1/receivables/:id` | `seller` | `bearerAuth` + ownership | `Receivables` | Edita metadata (apenas em `created`); retorna `{ ok: true }` |
 | POST | `/v1/receivables/:id/submit` | `seller` | `bearerAuth` + ownership | `Receivables` | `created → under_review`; retorna `{ ok: true }` |
 | POST | `/v1/receivables/:id/risk-decision` | `risk_analyst` / `risk_analyst_agent` | `bearerAuth` + `requireRoles(...)` | `Receivables` | `under_review → offer / reproved`; retorna `{ ok: true }` |
-| POST | `/v1/receivables/:id/seller-decision` | `seller` | `bearerAuth` + ownership | `Receivables` | `offer → approved / rejected`; retorna `{ ok: true }` |
-| POST | `/v1/payers/magic-link/respond` | payer (token) | `security: []` (token no body) | `Payers` | `approved → confirmed / payer_rejected`; body `{ decision: "accept" \| "reject" }`; retorna `{ ok: true }` |
+| POST | `/v1/receivables/:id/seller-decision` | `seller` | `bearerAuth` + ownership | `Receivables` | `offer → confirmed / rejected`; retorna `{ ok: true }` |
 | GET | `/v1/receivables` | `seller` / `risk_analyst` / `admin` | `bearerAuth` | `Receivables` | Lista filtrada por role; retorna `{ receivables: [...] }` |
 | GET | `/v1/receivables/:id` | `seller` / `risk_analyst` / `admin` | `bearerAuth` + ownership | `Receivables` | Retorna `{ receivable: {...} }` |
 | POST | `/v1/internal/receivables/:id/advance-settlement` | sistema | `dupplyApiKey` | `Internal` | `confirmed → processing → completed`; retorna `{ ok: true }` |
 | POST | `/v1/internal/receivables/:id/payer-settlement` | sistema | `dupplyApiKey` | `Internal` | `completed → payer_settled / overdue`; retorna `{ ok: true }` |
+
+### Rota descontinuada
+
+| Método | Rota | Resposta |
+|---|---|---|
+| POST | `/v1/payers/magic-link/respond` | **410 Gone** — confirmação do payer removida; ver `module-payer.mdc` |
 
 > `ownership` = verifica se o `sellerId` do receivable bate com o `profileId` do JWT antes de agir. Ver pattern em `routes-swagger.mdc`.
 
@@ -208,6 +219,6 @@ Todas as rotas seguem o padrão de `routes-swagger.mdc`: `app.withTypeProvider<Z
 
 - **Módulo 1** (account) — autenticação JWT para seller, risk_analyst, admin.
 - **Módulo 2** (seller) — `sellerId` FK; seller deve estar `active` para criar receivable.
-- **Módulo 4** (payer) — `payerId` FK; upsert por CNPJ no submit; magic link disparado no `approved`.
+- **Módulo 4** (payer) — `payerId` FK; upsert por CNPJ no submit; notificação informativa disparada em `confirmed`.
 - **Módulo 6** (documents) — documentos fiscais e comprovantes vinculados via `parentType = 'receivable'`.
-- **Módulo 7** (registry_on_chain) — tokenização do título; `receivableId` FK; criado ao entrar em `approved`.
+- **Módulo 7** (registry_on_chain) — tokenização do título; `receivableId` FK; criado ao entrar em `confirmed`.

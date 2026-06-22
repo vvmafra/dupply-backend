@@ -16,7 +16,7 @@ account ──1:1──► seller ──1:1──► wallet
 account ──1:1──► risk_analyst
 account ──1:1──► admin
 
-payer  (sem account — autenticação via magic link)
+payer  (sem account — notificado informativamente por email)
 
 receivable ──N:1──► seller
 receivable ──N:1──► payer
@@ -27,7 +27,7 @@ registry_on_chain ──N:1──► receivable
 ```
 
 - Um `account` tem exatamente **uma** role e, portanto, exatamente **um** perfil correspondente (`seller`, `risk_analyst` ou `admin`).
-- `payer` não tem `account` — é identificado por CNPJ/email e interage via magic link.
+- `payer` não tem `account` — é identificado por CNPJ/email e recebe notificação informativa (sem login). Quando o seller aceita a proposta do analista (`offer → confirmed`), o sistema dispara email informativo ao `payer.email` (best-effort; falha não reverte a transição). O payer **não** confirma via magic link — `POST /v1/payers/magic-link/respond` retorna **410 Gone**.
 - `wallet` é sempre 1:1 com `seller` (um seller de testnet ≠ um seller de mainnet — são accounts distintas).
 
 ---
@@ -56,7 +56,7 @@ registry_on_chain ──N:1──► receivable
 Módulo 1 — account          (base de auth; nenhum módulo existe sem ele)
 Módulo 2 — seller + wallet  (perfil cedente; wallet é 1:1, criada junto ao seller)
 Módulo 3 — risk_analyst + admin  (perfis simples de plataforma)
-Módulo 4 — payer            (sacado; sem account; magic link)
+Módulo 4 — payer            (sacado; sem account; notificação informativa)
 Módulo 5 — receivable       (depende de seller e payer)
 Módulo 6 — documents        (polimórfico; pode entrar após módulo 1)
 Módulo 7 — registry_on_chain (substitui tradeBillDrafts + tradeBillChainRecords)
@@ -105,7 +105,7 @@ Módulo 8 — ramp             (migrar existente: add deletedAt + timestamps nat
 | `seller` | JWT (account com role=seller) |
 | `risk_analyst` | JWT (account com role=risk_analyst) |
 | `admin` | JWT (account com role=admin) |
-| `payer` | Magic link (token de email vinculado ao receivable) |
+| `payer` | Sem autenticação na plataforma — notificado por email (sem login) |
 | Sistema / workers | `X-Dupply-Api-Key` header |
 
 - `refreshToken` armazenado diretamente em `account` (v1 — sem suporte a múltiplas sessões simultâneas).
@@ -120,7 +120,7 @@ Cada módulo tem seu `.mdc` dedicado:
 - `module-account.mdc` — auth, JWT, refresh token
 - `module-seller.mdc` — cedente, metadados, wallet
 - `module-wallet.mdc` — carteiras Stellar (classic + smart account)
-- `module-payer.mdc` — sacado, magic link
+- `module-payer.mdc` — sacado, notificação informativa
 - `module-risk-analyst.mdc` — analista e admin
 - `module-receivables.mdc` — duplicata, status machine completa, receivableMetaData, RBAC
 - `module-documents.mdc` — documentos polimórficos
