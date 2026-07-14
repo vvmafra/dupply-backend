@@ -15,9 +15,9 @@ import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import pg from "pg";
 
-import { loadConfig } from "../src/config.js";
-import { isPostgresDatabaseUrl } from "../src/db/dialect.js";
-import { createDb, runMigrations } from "../src/db/index.js";
+import { loadConfig } from "../src/infra/env/config.js";
+import { isPostgresDatabaseUrl } from "../src/infra/database/dialect.js";
+import { createDb, runMigrations } from "../src/infra/database/index.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");

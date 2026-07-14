@@ -17,8 +17,8 @@ import { randomUUID } from "node:crypto";
 
 import { Keypair } from "@stellar/stellar-sdk";
 
-import { EtherfuseClient, EtherfuseHttpError } from "../src/integrations/etherfuse/client.js";
-import type { KycIdentityPayload } from "../src/integrations/etherfuse/kyc-types.js";
+import { EtherfuseClient, EtherfuseHttpError } from "../src/infra/gateways/providers/etherfuse/client.js";
+import type { KycIdentityPayload } from "../src/infra/gateways/providers/etherfuse/kyc-types.js";
 
 const baseUrl = process.env.ETHERFUSE_BASE_URL ?? "https://api.sand.etherfuse.com";
 const apiKey = process.env.ETHERFUSE_API_KEY?.trim();

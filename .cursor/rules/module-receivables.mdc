@@ -1,6 +1,6 @@
 ---
 description: Módulo receivable — schema, receivableMetaData, status machine, RBAC, invariants e guard assertReceivableTransition
-globs: src/routes/v1/receivables*,src/routes/v1/receivable-internal*,src/domain/receivable/**,src/application/receivable/**
+globs: src/modules/receivable/**
 alwaysApply: false
 ---
 
@@ -145,7 +145,7 @@ assertReceivableTransition(from, to, actor);
 if (req.user.role !== 'risk_analyst') throw ...
 ```
 
-`assertReceivableTransition` vive em `src/domain/receivable/transitions.ts`. Toda rota mutante **deve** chamá-la. Não duplicar lógica nos handlers de rota.
+`assertReceivableTransition` vive em `src/modules/receivable/domain/transitions.ts`. Toda rota mutante **deve** chamá-la. Não duplicar lógica nos handlers de rota.
 
 ---
 
@@ -208,9 +208,9 @@ Todas as rotas seguem o padrão de `routes-swagger.mdc`: `app.withTypeProvider<Z
 
 ## Adicionando novas transições
 
-1. Atualizar `RECEIVABLE_STATUS` em `src/domain/receivable/transitions.ts`.
+1. Atualizar `RECEIVABLE_STATUS` em `src/modules/receivable/domain/transitions.ts`.
 2. Adicionar o caso em `assertReceivableTransition`.
-3. Escrever testes em `tests/domain/receivable/transitions.test.ts` cobrindo actor autorizado e todos os actores não autorizados.
+3. Escrever testes em `tests/modules/receivable/domain/transitions.test.ts` cobrindo actor autorizado e todos os actores não autorizados.
 4. Atualizar esta rule e `entities-overview.mdc` se a mudança for normativa.
 
 ---

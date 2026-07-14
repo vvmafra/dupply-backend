@@ -11,20 +11,32 @@ alwaysApply: true
 
 - **Runtime:** Node 20+, TypeScript (ESM), Fastify 5
 - **Persistence:** Drizzle ORM — PostgreSQL/Supabase (prod + dev via Docker); `drizzle-orm/pg-core`
-- **Auth:** JWT (humans) + `X-Dupply-Api-Key` (service/BFF/workers); payers via magic link
-- **Integrations:** Etherfuse (ramp/FX), Stellar Soroban RPC (trade bill registry)
+- **Auth:** JWT (humans) + `X-Dupply-Api-Key` (service/BFF/workers); payers via magic link (legacy respond = 410)
+- **Integrations:** Etherfuse (ramp/FX) and Stellar Soroban (trade bill registry) via `src/infra/gateways/`
+
+## Layout (canonical)
+
+```
+src/modules/{context}/   # api/ + application/ + domain/  (vertical slices)
+src/infra/               # env, database, blockchain, gateways, auth, generated
+src/compose/             # AppDeps + registerModules
+src/plugins/             # global HTTP cross-cutting (JWT, CORS, Swagger)
+src/shared/              # pure helpers (money)
+```
+
+Do **not** introduce top-level `src/domain/`, `src/application/`, `src/routes/`, or `src/integrations/` — those layouts are retired.
 
 ## Entities & modules (build order)
 
-| # | Módulo | Entidades | Context file |
-|---|--------|-----------|--------------|
+| # | Module | Entities | Context file |
+|---|--------|----------|--------------|
 | 1 | account | `accounts` | `module-account.mdc` |
 | 2 | seller + wallet | `sellers`, `wallets` | `module-seller.mdc`, `module-wallet.mdc` |
 | 3 | risk_analyst + admin | `risk_analysts`, `admins` | `module-risk-analyst.mdc` |
 | 4 | payer | `payers`, `payer_magic_tokens` | `module-payer.mdc` |
-| 5 | receivable | `receivables` | `receivable-workflows.mdc` |
+| 5 | receivable | `receivables` | `module-receivables.mdc` |
 | 6 | documents | `documents` | `module-documents.mdc` |
-| 7 | registry on-chain | `registry_on_chain` | `module-registry.mdc` |
+| 7 | registry on-chain | `registry_on_chain` / trade-bill drafts | `module-registry.mdc` |
 | 8 | ramp | `ramp_quotes`, `ramp_orders` | `module-ramp.mdc` |
 
 Full entity map + cross-cutting standards (timestamps, soft delete, IDs): **`entities-overview.mdc`**
@@ -33,18 +45,19 @@ Full entity map + cross-cutting standards (timestamps, soft delete, IDs): **`ent
 
 | Context | Code paths | External system |
 | ------- | ---------- | --------------- |
-| **Platform / Identity** | `routes/v1/auth`, `accounts`, `sellers`, `risk-analysts`, `admins`, `payers`; `domain/account`, `domain/seller` | Internal DB only |
-| **Receivables** | `routes/v1/receivables`, `receivable-internal`; `domain/receivable` | Internal DB only |
-| **Ramp** | `routes/v1/ramp`, `integrations/etherfuse` | Etherfuse FX API |
-| **Registry** | `routes/v1/trade-bills`, `domain/tradeBill`, `integrations/registry`, `generated/` | Soroban `TradeBillRegistry` |
+| **Platform / Identity** | `modules/auth`, `modules/account`, `modules/seller`, `modules/payer` | Internal DB; `infra/auth/` |
+| **Receivables** | `modules/receivable/` | Internal DB only |
+| **Ramp** | `modules/ramp/`; `infra/gateways/providers/etherfuse/` | Etherfuse FX API |
+| **Registry** | `modules/registry/` (`domain/tradeBill/`); `infra/blockchain/stellar/`; `infra/gateways` → `RegistryGateway` | Soroban `TradeBillRegistry` |
 
-Cross-context correlation: explicit IDs in DB only — no tight coupling in code.
+Cross-context correlation: explicit IDs in DB or `compose/` callbacks only — no cross-module `domain/` imports.
 
 ## Authoritative docs (read before large changes)
 
-- `docs/ARCHITECTURE-RULES.md` — layers, CQRS, import matrix
+- `docs/ARCHITECTURE-RULES.md` — modular layout, CQRS, import matrix
+- `src/infra/gateways/README.md` — ports vs providers vs factories
 - `API.md` — routes, env vars, smoke checklist
-- `.cursor/rules/entities-overview.mdc` — **entity map, padrões transversais, ordem de módulos**
+- `.cursor/rules/entities-overview.mdc` — entity map, cross-cutting standards, module order
 - `docs/notes/2026-05-19_platform-auth-rbac-receivable-v1.md` — receivable RBAC + lifecycle
 - `docs/notes/2026-05-18_v1-duplicata-contract-integration-architecture.md` — trade bill + Soroban flow
 
@@ -54,6 +67,7 @@ Cross-context correlation: explicit IDs in DB only — no tight coupling in code
 - **Timestamps:** `timestamp` nativo PostgreSQL (`created_at`, `updated_at`, `deleted_at`)
 - **Soft delete:** `deleted_at IS NOT NULL` = deletado; toda query padrão filtra `WHERE deleted_at IS NULL`
 - **`updated_at`:** bumped em toda mutação (handler de comando ou trigger PG)
+- **Schema path:** `src/infra/database/schema.ts`
 
 ## Language
 

@@ -14,7 +14,7 @@
  */
 import { randomUUID } from "node:crypto";
 
-import { EtherfuseClient } from "../src/integrations/etherfuse/client.js";
+import { EtherfuseClient } from "../src/infra/gateways/providers/etherfuse/client.js";
 
 const baseUrl = process.env.ETHERFUSE_BASE_URL ?? "https://api.sand.etherfuse.com";
 const apiKey = process.env.ETHERFUSE_API_KEY;

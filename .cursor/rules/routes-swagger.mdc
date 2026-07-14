@@ -1,6 +1,6 @@
 ---
 description: Como criar e documentar rotas HTTP no dupply-backend (Fastify + Zod + Swagger)
-globs: src/routes/**/*,src/plugins/swagger.ts
+globs: src/modules/**/api/**,src/plugins/swagger.ts
 alwaysApply: false
 ---
 
@@ -10,6 +10,8 @@ Stack: **Fastify 5 + `fastify-type-provider-zod` + `@fastify/swagger`**.
 
 A UI do Swagger fica em `/docs`. O spec OpenAPI fica em `/docs/json`.
 
+HTTP handlers vivem em `src/modules/{context}/api/`. Registro via `registerXxxModule` em `src/compose/registerModules.ts`.
+
 ---
 
 ## Template de rota (copiar para novas rotas)
@@ -18,6 +20,7 @@ A UI do Swagger fica em `/docs`. O spec OpenAPI fica em `/docs/json`.
 import type { FastifyInstance } from "fastify";
 import type { ZodTypeProvider } from "fastify-type-provider-zod";
 import { z } from "zod";
+import type { AppDeps } from "../../../compose/deps.js";
 
 // Schemas definidos FORA da função (reusáveis, visíveis no Swagger)
 const createBodySchema = z.object({
@@ -26,7 +29,7 @@ const createBodySchema = z.object({
 
 const idParamsSchema = z.object({ id: z.string().min(1) });
 
-export async function registerXxxRoutes(app: FastifyInstance, deps: AppDeps) {
+export async function registerXxxModule(app: FastifyInstance, deps: AppDeps) {
   const api = app.withTypeProvider<ZodTypeProvider>();  // <-- obrigatório
 
   api.post("/v1/xxx", {
@@ -44,6 +47,7 @@ export async function registerXxxRoutes(app: FastifyInstance, deps: AppDeps) {
     // Rotas ownership-based: if (!request.auth) return reply.code(401).send({ error: "unauthorized" });
     // request.body, request.params, request.query são totalmente tipados
     // NÃO usar safeParse() aqui — validação já ocorreu no schema
+    // Delegar para modules/{ctx}/application/commands|queries/executeXxx(deps, input)
     return reply.code(201).send({ id: "..." });
   });
 }
@@ -123,13 +127,13 @@ app.setSerializerCompiler(serializerCompiler); // de fastify-type-provider-zod
 
 | Tag | Módulo |
 |---|---|
-| `Auth` | `/v1/auth/*` |
-| `Accounts` | `/v1/accounts/*` |
-| `Sellers` | `/v1/sellers/*` |
-| `Receivables` | `/v1/receivables/*` |
-| `Ramp` | `/v1/ramp/*` |
-| `Trade Bills` | `/v1/trade-bills/*` |
-| `Internal` | `/v1/internal/*` |
+| `Auth` | `/v1/auth/*` → `modules/auth/api/` |
+| `Accounts` | `/v1/accounts/*` → `modules/account/api/` |
+| `Sellers` | `/v1/sellers/*` → `modules/seller/api/` |
+| `Receivables` | `/v1/receivables/*` → `modules/receivable/api/` |
+| `Ramp` | `/v1/ramp/*` → `modules/ramp/api/` |
+| `Trade Bills` | `/v1/trade-bills/*` → `modules/registry/api/` |
+| `Internal` | `/v1/internal/*` → `modules/receivable/api/` (internal) |
 
 Novas tags devem ser adicionadas em `src/plugins/swagger.ts`.
 
@@ -141,3 +145,4 @@ Novas tags devem ser adicionadas em `src/plugins/swagger.ts`.
 - ❌ `(request.params as { id: string }).id` — usar `params:` no schema
 - ❌ `app.post(url, async (request, reply) => { ... })` sem o `schema:` e sem `withTypeProvider`
 - ❌ `FastifyRequest` / `FastifyReply` como tipo explícito nos handlers de rotas migradas — deixar o TypeScript inferir
+- ❌ Importar vendor SDKs (`@stellar/stellar-sdk`, Etherfuse client) de `modules/*/api/` — usar `deps.gateways`

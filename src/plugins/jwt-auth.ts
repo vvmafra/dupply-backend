@@ -1,7 +1,7 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 
-import type { AppConfig } from "../config.js";
-import { verifyAccessToken } from "../lib/jwt.js";
+import type { AppConfig } from "../infra/env/config.js";
+import { verifyAccessToken } from "../infra/auth/jwt.js";
 
 export function requireJwt(config: AppConfig) {
   return async function requireJwtHook(

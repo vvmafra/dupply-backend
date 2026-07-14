@@ -30,11 +30,15 @@ Load the relevant rule before working in an area:
 
 | Working on | Load rule |
 |------------|-----------|
-| `src/domain/receivable/`, `routes/v1/receivables*`, `receivable-internal*` | `receivable-workflows` |
-| `src/domain/tradeBill/`, `routes/v1/trade-bills*`, `integrations/registry/` | `trade-bill-workflows` *(coming soon)* |
-| `src/routes/v1/ramp*`, `integrations/etherfuse/` | `ramp-integration` *(coming soon)* |
-| `src/db/schema.ts`, any migration, new DB table | `data-models-relationships` |
-| Any `src/` file | `architecture-layers` |
+| `src/modules/receivable/` | `module-receivables` |
+| `src/modules/registry/` (trade-bill HTTP `/v1/trade-bills`, domain `tradeBill/`) | `module-registry` |
+| `src/modules/ramp/`, `src/infra/gateways/providers/etherfuse/` | `module-ramp` |
+| `src/modules/account/`, `src/modules/auth/` | `module-account` |
+| `src/modules/seller/` | `module-seller` |
+| `src/modules/wallet/` | `module-wallet` |
+| `src/modules/payer/` | `module-payer` |
+| `src/infra/database/`, any migration, new DB table | `data-models-relationships` |
+| Any `src/` file | `architecture-layers` (modular architecture) |
 | Any file in the project | `project-context` |
 
 ---
@@ -44,9 +48,9 @@ Load the relevant rule before working in an area:
 | File | Scope | Covers |
 |------|-------|--------|
 | `project-context.mdc` | always | Stack, bounded contexts, authoritative docs |
-| `architecture-layers.mdc` | `src/**/*` | DDD layers, CQRS, import matrix |
-| `receivable-workflows.mdc` | receivable paths | Status machine, RBAC, domain rules |
-| `data-models-relationships.mdc` | `src/db/**` | Schema, tables, relationships |
+| `architecture-layers.mdc` | `src/**/*` | Modular layout, layers inside modules, import matrix, CQRS |
+| `module-*.mdc` | `src/modules/{name}/**` | Per-module schema, routes, invariants |
+| `data-models-relationships.mdc` | `src/infra/database/**` | Schema, tables, relationships |
 
 ---
 
@@ -64,7 +68,9 @@ Load the relevant rule before working in an area:
 ## Quick rules
 
 - English for all code, APIs, DB columns, technical docs, task files, and rule files.
-- Read `docs/ARCHITECTURE-RULES.md` before any structural change.
-- `domain/` must stay pure — no Fastify, Drizzle, or `process.env`.
-- New env vars → `config.ts` + `.env.example` + `API.md`.
-- Schema changes → `schema.ts` + `npm run db:generate`.
+- Read `docs/ARCHITECTURE-RULES.md` before any structural change (modular modules + infra).
+- Module `domain/` must stay pure — no Fastify, Drizzle, or `process.env`.
+- Vendor SDKs only under `src/infra/gateways/providers/` (or blockchain adapters) — modules use ports via `AppDeps`.
+- New env vars → `src/infra/env/config.ts` + `.env.example` + `API.md`.
+- Schema changes → `src/infra/database/schema.ts` + `npm run db:generate`.
+- `src/plugins/` stays at root (global HTTP cross-cutting). `src/shared/` stays at root (pure helpers).

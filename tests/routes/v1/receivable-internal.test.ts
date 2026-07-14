@@ -5,16 +5,16 @@ import { eq } from "drizzle-orm";
 import Fastify from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 
-import { loadConfig } from "../../../src/config.js";
-import type { DbHandle } from "../../../src/db/index.js";
-import { receivables } from "../../../src/db/schema.runtime.js";
+import { loadConfig } from "../../../src/infra/env/config.js";
+import type { DbHandle } from "../../../src/infra/database/index.js";
+import { receivables } from "../../../src/infra/database/schema.runtime.js";
 import { requireDupplyApiKey } from "../../../src/plugins/dupply-auth.js";
-import { registerReceivableInternalRoutes } from "../../../src/routes/v1/receivable-internal.js";
-import type { AppDeps } from "../../../src/application/deps.js";
-import { executeRiskDecision } from "../../../src/application/receivable/commands/riskDecisionCommand.js";
-import { executeSellerDecision } from "../../../src/application/receivable/commands/sellerDecisionCommand.js";
-import { executeSubmitReceivable } from "../../../src/application/receivable/commands/submitReceivableCommand.js";
-import { executeUpdateReceivableDraft } from "../../../src/application/receivable/commands/updateReceivableDraftCommand.js";
+import { registerReceivableInternalRoutes } from "../../../src/modules/receivable/api/receivable-internal.js";
+import type { AppDeps } from "../../../src/compose/deps.js";
+import { executeRiskDecision } from "../../../src/modules/receivable/application/commands/riskDecisionCommand.js";
+import { executeSellerDecision } from "../../../src/modules/receivable/application/commands/sellerDecisionCommand.js";
+import { executeSubmitReceivable } from "../../../src/modules/receivable/application/commands/submitReceivableCommand.js";
+import { executeUpdateReceivableDraft } from "../../../src/modules/receivable/application/commands/updateReceivableDraftCommand.js";
 import {
   completeReceivableMetaData,
   createDraftReceivable,

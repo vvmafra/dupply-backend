@@ -6,15 +6,16 @@ import Fastify from "fastify";
 import * as jose from "jose";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 
-import { loadConfig } from "../../../src/config.js";
-import { createDb, runMigrations, type DbHandle } from "../../../src/db/index.js";
-import { REFRESH_COOKIE_NAME } from "../../../src/lib/authCookie.js";
+import { loadConfig } from "../../../src/infra/env/config.js";
+import { createDb, runMigrations, type DbHandle } from "../../../src/infra/database/index.js";
+import { REFRESH_COOKIE_NAME } from "../../../src/infra/auth/authCookie.js";
 import { registerCookie } from "../../../src/plugins/cookie.js";
 import { requireJwt } from "../../../src/plugins/jwt-auth.js";
-import { registerAccountRoutes } from "../../../src/routes/v1/accounts.js";
-import { registerAuthRoutes } from "../../../src/routes/v1/auth.js";
-import type { AppDeps } from "../../../src/application/deps.js";
+import { registerAccountRoutes } from "../../../src/modules/account/api/accounts.js";
+import { registerAuthRoutes } from "../../../src/modules/auth/api/auth.js";
+import type { AppDeps } from "../../../src/compose/deps.js";
 import { insertAccount, TEST_PASSWORD } from "../../helpers/sellerTestHelpers.js";
+import { createGateways } from "../../../src/infra/gateways/factories/createGateways.js";
 
 type TestApp = {
   app: ReturnType<typeof Fastify>;
@@ -51,7 +52,7 @@ async function createTestApp(): Promise<TestApp> {
     JWT_SECRET: "test-secret-min-16-chars",
     DATABASE_URL: "file::memory:",
   });
-  const deps: AppDeps = { db: handle.db, config };
+  const deps: AppDeps = { db: handle.db, config, gateways: createGateways(config) };
 
   const app = Fastify({ logger: false });
   app.setValidatorCompiler(validatorCompiler);

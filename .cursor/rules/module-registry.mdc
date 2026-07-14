@@ -1,6 +1,6 @@
 ---
 description: Módulo registry_on_chain — registro de trade bills no contrato Soroban (substitui tradeBillDrafts + tradeBillChainRecords)
-globs: src/routes/v1/trade-bills*,src/domain/tradeBill/**,src/application/tradeBill/**,src/integrations/registry/**
+globs: src/modules/registry/**
 alwaysApply: false
 ---
 
@@ -92,4 +92,4 @@ confirmed  →  (terminal)
 ## Dependências
 
 - **Módulo 5** (receivable) — `receivableId` FK (opcional em v1).
-- Integração `integrations/registry` (Soroban RPC) — não é dependência de schema.
+- Integração via `deps.gateways.registry` (`RegistryGateway`); adapters em `src/infra/blockchain/stellar/registry/` — não é dependência de schema.

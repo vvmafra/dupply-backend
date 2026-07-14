@@ -6,22 +6,23 @@ import { eq } from "drizzle-orm";
 import Fastify from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 
-import { loadConfig } from "../../../src/config.js";
-import { createDb, runMigrations, type DbHandle } from "../../../src/db/index.js";
-import { receivables } from "../../../src/db/schema.runtime.js";
-import type { AccountRole } from "../../../src/domain/account/types.js";
-import { signAccessToken } from "../../../src/lib/jwt.js";
+import { loadConfig } from "../../../src/infra/env/config.js";
+import { createDb, runMigrations, type DbHandle } from "../../../src/infra/database/index.js";
+import { receivables } from "../../../src/infra/database/schema.runtime.js";
+import type { AccountRole } from "../../../src/modules/account/domain/types.js";
+import { signAccessToken } from "../../../src/infra/auth/jwt.js";
 import { registerCookie } from "../../../src/plugins/cookie.js";
 import { requireJwt } from "../../../src/plugins/jwt-auth.js";
-import { registerAuthRoutes } from "../../../src/routes/v1/auth.js";
-import { registerReceivableRoutes } from "../../../src/routes/v1/receivables.js";
-import type { AppDeps } from "../../../src/application/deps.js";
+import { registerAuthRoutes } from "../../../src/modules/auth/api/auth.js";
+import { registerReceivableRoutes } from "../../../src/modules/receivable/api/receivables.js";
+import type { AppDeps } from "../../../src/compose/deps.js";
 import {
   completeReceivableMetaData,
   PAYER_CNPJ,
   setupActiveSeller,
 } from "../../helpers/receivableTestHelpers.js";
 import { insertAccount, TEST_PASSWORD } from "../../helpers/sellerTestHelpers.js";
+import { createGateways } from "../../../src/infra/gateways/factories/createGateways.js";
 
 type TestApp = {
   app: ReturnType<typeof Fastify>;
@@ -37,7 +38,7 @@ async function createTestApp(): Promise<TestApp> {
     JWT_SECRET: "test-secret-min-16-chars",
     DATABASE_URL: "file::memory:",
   });
-  const deps: AppDeps = { db: handle.db, config };
+  const deps: AppDeps = { db: handle.db, config, gateways: createGateways(config) };
 
   const app = Fastify({ logger: false });
   app.setValidatorCompiler(validatorCompiler);

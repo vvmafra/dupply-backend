@@ -1,13 +1,13 @@
 import { createId } from "@paralleldrive/cuid2";
 import argon2 from "argon2";
 
-import type { AppDeps } from "../../src/application/deps.js";
-import { accounts, sellers } from "../../src/db/schema.runtime.js";
+import type { AppDeps } from "../../src/compose/deps.js";
+import { accounts, sellers } from "../../src/infra/database/schema.runtime.js";
 import {
   EMPTY_BUSINESS_RELATIONS_METADATA,
   EMPTY_COMPANY_METADATA,
   EMPTY_LEGAL_REP_METADATA,
-} from "../../src/domain/seller/types.js";
+} from "../../src/modules/seller/domain/types.js";
 
 export const TEST_PASSWORD = "test-password-123";
 

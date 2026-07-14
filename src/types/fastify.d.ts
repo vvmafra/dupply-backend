@@ -1,6 +1,6 @@
 import "fastify";
 
-import type { AccountRole } from "../domain/account/types.js";
+import type { AccountRole } from "../modules/account/domain/types.js";
 
 declare module "fastify" {
   interface FastifyRequest {

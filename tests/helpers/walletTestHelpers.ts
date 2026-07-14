@@ -1,4 +1,4 @@
-import type { RegisterSellerWalletPayload } from "../../src/domain/wallet/validators.js";
+import type { RegisterSellerWalletPayload } from "../../src/modules/wallet/domain/validators.js";
 
 export const VALID_CONTRACT_ID =
   "CABCDEFGHIJKLMNOPQRSTUVWXYZ234567ABCDEFGHIJKLMNOPQRSTUVW";

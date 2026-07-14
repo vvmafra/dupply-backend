@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 
-import type { AccountRole } from "../domain/account/types.js";
+import type { AccountRole } from "../modules/account/domain/types.js";
 
 export function requireRoles(...allowed: AccountRole[]) {
   return async function requireRolesHook(

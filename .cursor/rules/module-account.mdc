@@ -1,6 +1,6 @@
 ---
 description: Módulo account — entidade de autenticação, JWT, refresh token e controle de acesso
-globs: src/routes/v1/auth*,src/domain/account/**,src/application/account/**,src/db/schema*
+globs: src/modules/account/**,src/modules/auth/**,src/infra/database/schema*
 alwaysApply: false
 ---
 
@@ -53,7 +53,7 @@ POST /v1/auth/logout    → lê dupply_rt do cookie; nulifica refreshToken em ac
 **Transporte do refresh token (v1):**
 - Cookie `dupply_rt` — `HttpOnly`, `SameSite=Lax`, `Path=/v1/auth`, `Secure` em produção.
 - O JSON de login/register/refresh **não** inclui `refreshToken` nem `refreshExpiresInSeconds`.
-- Helpers em `src/lib/authCookie.ts`; parsing via `@fastify/cookie`.
+- Helpers em `src/infra/auth/authCookie.ts`; parsing via `@fastify/cookie`.
 
 **JWT payload:**
 ```typescript

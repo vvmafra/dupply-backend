@@ -6,7 +6,7 @@ const postgres =
 
 export default defineConfig({
   // SQLite tables use sqliteTable; Postgres (Supabase) needs pgTable — see schema.pg.ts
-  schema: postgres ? "./src/db/schema.pg.ts" : "./src/db/schema.ts",
+  schema: postgres ? "./src/infra/database/schema.pg.ts" : "./src/infra/database/schema.ts",
   out: "./drizzle",
   dialect: postgres ? "postgresql" : "sqlite",
   schemaFilter: postgres ? ["public"] : undefined,

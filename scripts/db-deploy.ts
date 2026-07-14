@@ -17,8 +17,8 @@ import { execSync } from "node:child_process";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { loadConfig } from "../src/config.js";
-import { isPostgresDatabaseUrl } from "../src/db/dialect.js";
+import { loadConfig } from "../src/infra/env/config.js";
+import { isPostgresDatabaseUrl } from "../src/infra/database/dialect.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const ROOT = resolve(__dirname, "..");

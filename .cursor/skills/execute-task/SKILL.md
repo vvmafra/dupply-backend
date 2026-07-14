@@ -37,10 +37,13 @@ Before modifying any file:
 Follow the techspec exactly. For each subtask in `N_task.md`:
 - Implement the change.
 - Write or update tests as specified.
-- Follow the architecture rules:
-  - `domain/` → no Fastify, Drizzle, `process.env`.
-  - New env vars → `config.ts` + `.env.example`.
-  - New DB tables/columns → `schema.ts` + `npm run db:generate`.
+- Follow the **modular architecture** rules (`docs/ARCHITECTURE-RULES.md`):
+  - Product code under `src/modules/{context}/` with `api/`, `application/`, `domain/`.
+  - Module `domain/` → no Fastify, Drizzle, `process.env`, or vendor SDKs.
+  - External systems via `infra/gateways/ports` injected on `AppDeps` — not direct SDK imports from modules.
+  - New env vars → `src/infra/env/config.ts` + `.env.example`.
+  - New DB tables/columns → `src/infra/database/schema.ts` + `npm run db:generate`.
+  - `src/plugins/` and `src/shared/` stay at repo root.
 
 ### 4. Verify
 
@@ -95,6 +98,7 @@ Tell the user:
 ## Rules
 
 - Never skip step 1 (reading PRD + techspec). The `<critical>` tag in task files is a hard requirement.
+- Follow modular architecture: do not recreate top-level `src/domain/`, `src/application/`, `src/routes/`, or `src/integrations/`.
 - Do not implement more than the task scope — if you notice a gap, note it in the validation evidence under "Notes" and stop.
 - If a techspec decision conflicts with reality (e.g. a file has a different structure than expected), implement the correct approach and document the deviation in the evidence file.
 - Always run `npm run lint` before marking a task done.

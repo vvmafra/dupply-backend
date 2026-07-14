@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { AUTH_ERROR_CODES, AuthError } from "../../src/domain/account/errors.js";
+import { AUTH_ERROR_CODES, AuthError } from "../../src/modules/account/domain/errors.js";
 import {
   isRefreshTokenExpired,
   issueRefreshToken,
   parseStoredRefreshToken,
   serializeStoredRefreshToken,
   verifyStoredRefreshToken,
-} from "../../src/lib/refreshToken.js";
+} from "../../src/infra/auth/refreshToken.js";
 
 const REFRESH_TTL_SECONDS = 604_800;
 

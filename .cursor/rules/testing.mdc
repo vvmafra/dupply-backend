@@ -11,22 +11,23 @@ Testes ficam **fora de `src/`**, na pasta irmã `tests/`, espelhando a estrutura
 ## Layout
 
 ```
-src/domain/account/policies.ts     →  tests/domain/account/policies.test.ts
-src/application/account/commands/  →  tests/application/account/commands/
-src/routes/v1/accounts.ts          →  tests/routes/v1/accountAuthRoutes.test.ts
+src/modules/account/domain/policies.ts              →  tests/modules/account/domain/policies.test.ts
+src/modules/account/application/commands/           →  tests/modules/account/application/commands/
+src/modules/auth/api/auth.ts                        →  tests/routes/v1/accountAuthRoutes.test.ts
+src/infra/gateways/factories/createGateways.ts      →  tests/infra/gateways/...
 ```
 
 - **Nunca** criar `*.test.ts` dentro de `src/`.
 - Nome do arquivo: `{module}.test.ts` (mesmo nome do módulo testado + `.test.ts`).
-- Subpastas de `tests/` replicam o caminho relativo em `src/` (sem o prefixo `src/`).
+- Subpastas de `tests/` replicam o caminho relativo em `src/` (sem o prefixo `src/`). Preferir `tests/modules/{context}/` para código de produto.
 
 ## Imports
 
 Importar código de produção via caminho relativo até `src/`:
 
 ```typescript
-// tests/domain/account/policies.test.ts
-import { assertCanReadAccount } from "../../../src/domain/account/policies.js";
+// tests/modules/account/domain/policies.test.ts
+import { assertCanReadAccount } from "../../../../src/modules/account/domain/policies.js";
 ```
 
 - Sempre usar extensão `.js` nos imports (NodeNext / ESM).
@@ -42,14 +43,15 @@ import { assertCanReadAccount } from "../../../src/domain/account/policies.js";
 
 | Tipo | Onde | Exemplo |
 |------|------|---------|
-| Unit (domain/lib) | `tests/domain/`, `tests/lib/` | policies, transitions |
-| Application | `tests/application/` | commands, queries com DB in-memory |
+| Unit (domain) | `tests/modules/{ctx}/domain/` | policies, transitions |
+| Application | `tests/modules/{ctx}/application/` | commands, queries com DB in-memory |
+| Infra / gateways | `tests/infra/` | providers, factories |
 | HTTP / route | `tests/routes/` | Fastify `app.inject()` |
 
 Testes de integração/e2e futuros: `tests/integration/` ou `tests/e2e/` (não co-localizar em `src/`).
 
 ## Ao adicionar feature
 
-1. Implementar em `src/`.
+1. Implementar em `src/modules/{context}/` (ou `src/infra/` se for infra).
 2. Criar teste em `tests/` no caminho espelhado.
 3. Rodar `npm test` antes de finalizar.

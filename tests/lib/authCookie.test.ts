@@ -5,13 +5,13 @@ import cookie from "@fastify/cookie";
 import Fastify from "fastify";
 import type { FastifyReply } from "fastify";
 
-import type { AppConfig } from "../../src/config.js";
+import type { AppConfig } from "../../src/infra/env/config.js";
 import {
   REFRESH_COOKIE_NAME,
   REFRESH_COOKIE_PATH,
   clearRefreshCookie,
   setRefreshCookie,
-} from "../../src/lib/authCookie.js";
+} from "../../src/infra/auth/authCookie.js";
 
 function makeConfig(overrides: Partial<AppConfig> = {}): AppConfig {
   return {

@@ -1,6 +1,6 @@
 ---
 description: Módulo wallet — smart account Stellar via passkey (WebAuthn), vínculo com seller e plataforma
-globs: src/routes/v1/wallets*,src/domain/wallet/**,src/application/wallet/**,src/integrations/stellar/**
+globs: src/modules/wallet/**
 alwaysApply: false
 ---
 

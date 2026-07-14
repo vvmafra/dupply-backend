@@ -21,13 +21,13 @@ Must run **after** `write-prd`. Requires `tasks/prd-{name}/prd.md` to exist.
 ### 1. Read context
 
 1. Read `tasks/prd-{name}/prd.md` — all sections, especially Functional Requirements.
-2. Read `docs/ARCHITECTURE-RULES.md` — layers, CQRS, import matrix.
-3. Read the relevant `.cursor/rules/` files for the affected domain.
+2. Read `docs/ARCHITECTURE-RULES.md` — **modular architecture**, import matrix, CQRS. Mandatory.
+3. Read the relevant `.cursor/rules/` files for the affected domain (`module-*.mdc`, `architecture-layers.mdc`).
 4. Explore the actual source files that will be changed:
-   - `src/domain/` entities for the relevant context.
-   - `src/db/schema.ts` if schema changes are needed.
-   - Existing routes, application handlers, integration clients.
-5. Note existing patterns (naming, error handling, test structure).
+   - `src/modules/{context}/` — `api/`, `application/`, `domain/` for the relevant bounded context.
+   - `src/infra/` — `env/`, `database/`, `gateways/`, `blockchain/` when config, schema, or vendors are involved.
+   - `src/compose/deps.ts` / `registerModules.ts` when wiring new modules or ports.
+5. Note existing patterns (naming, error handling, test structure under `tests/modules/`).
 
 ### 2. Write the TechSpec
 
@@ -55,15 +55,17 @@ Reference PRD if useful.
 
 ## Architecture overview
 
-Describe the layers touched and how they interact. Use a diagram if the flow is non-trivial:
+Describe the modules/infra touched and how layers interact. Use a diagram if the flow is non-trivial:
 
 \`\`\`
-Domain (entity / value object)
-  └── new method / rule
-Application (command or query handler)
-  └── orchestrates domain + DB + integration
-HTTP (route handler)
-  └── thin — only Zod + auth + status code mapping
+Module api/ (HTTP)
+  └── Zod + auth + error mapping
+Module application/ (command or query)
+  └── domain rules + infra/gateways/ports + infra/database
+Module domain/
+  └── pure invariants
+infra/gateways/providers/ (if external)
+  └── vendor SDKs
 \`\`\`
 
 ---
@@ -72,7 +74,7 @@ HTTP (route handler)
 
 ### 1. {Component name}
 
-**File:** `src/path/to/file.ts`
+**File:** `src/modules/{context}/...` or `src/infra/...`
 
 What changes and why. Include concrete code snippets:
 
@@ -95,10 +97,10 @@ Justify non-obvious decisions.
 
 \`\`\`
 HTTP request
-  → Zod validation
-  → Application handler
-      → Domain guard / entity method
-      → DB write / read
+  → modules/{ctx}/api (Zod)
+  → modules/{ctx}/application/commands|queries
+      → domain guard / entity method
+      → infra/database and/or deps.gateways
   → HTTP response
 \`\`\`
 
@@ -108,7 +110,7 @@ HTTP request
 
 | File | Change type |
 |------|-------------|
-| `src/...` | Added / Modified / Deleted |
+| `src/modules/...` or `src/infra/...` | Added / Modified / Deleted |
 
 ---
 
@@ -117,7 +119,7 @@ HTTP request
 - **API compatibility:** breaking or non-breaking?
 - **Database:** migration needed? What tables?
 - **Performance:** any O(N) concerns?
-- **Other modules:** any cross-context impact?
+- **Other modules:** any cross-context impact? (use compose/ports — no cross-domain imports)
 
 ---
 
@@ -160,7 +162,8 @@ HTTP request
 
 - English only.
 - Every `FR-N` from the PRD must be traceable to at least one component section.
-- Include exact file paths — no vague "somewhere in the service layer".
+- Include exact file paths under `src/modules/` and `src/infra/` — no vague "somewhere in the service layer".
 - Code snippets must compile against the project's TypeScript config (`verbatimModuleSyntax`, ESM).
+- Product modules must not import vendor SDKs; depend on `infra/gateways/ports` via `AppDeps`.
 - Do not change the PRD. If you discover a conflict, note it in "Open questions resolved" and resolve it inline.
 - `tasks/prd-{name}/` must already exist (created by `write-prd`).

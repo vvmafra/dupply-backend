@@ -1,6 +1,6 @@
 ---
 description: Módulo payer — entidade sacado, notificação informativa, upsert por CNPJ
-globs: src/routes/v1/payers*,src/domain/payer/**,src/application/payer/**
+globs: src/modules/payer/**
 alwaysApply: false
 ---
 
@@ -49,7 +49,7 @@ Fluxo atual:
 5. Liquidação prossegue via rotas internas (confirmed → processing → …)
 ```
 
-**Hook de aplicação:** `notifyPayerReceivableConfirmed` em `src/application/payer/ports/receivableNotification.ts` (stub até Module 4 implementar transporte/templates).
+**Hook de aplicação:** `notifyPayerReceivableConfirmed` em `src/modules/payer/application/ports/receivableNotification.ts` (stub até Module 4 implementar transporte/templates).
 
 ### Magic link — fluxo descontinuado
 

@@ -1,6 +1,6 @@
 ---
 description: Módulo ramp — quotes e orders Etherfuse para on/off ramp; migração de schema legado
-globs: src/routes/v1/ramp*,src/integrations/etherfuse/**,src/domain/ramp/**,src/application/ramp/**
+globs: src/modules/ramp/**
 alwaysApply: false
 ---
 
@@ -59,7 +59,7 @@ export const rampOrders = pgTable("ramp_orders", {
 ## Bounded context — isolamento
 
 - `ramp_quotes` e `ramp_orders` são do bounded context **Ramp**.
-- **Nenhum código** de `integrations/registry` ou `domain/tradeBill` deve importar daqui, e vice-versa.
+- **Nenhum código** de `modules/registry` ou `infra/blockchain/stellar/registry` deve importar daqui, e vice-versa.
 - Correlação com outros contextos apenas via IDs explícitos no banco.
 
 ---
@@ -85,4 +85,4 @@ export const rampOrders = pgTable("ramp_orders", {
 ## Dependências
 
 - Nenhuma FK direta para outros módulos em v1 (`userId` é referência informal).
-- Integração `integrations/etherfuse` — cliente HTTP Etherfuse.
+- Integração via `deps.gateways.ramp` (`RampGateway`); cliente Etherfuse em `src/infra/gateways/providers/etherfuse/`.

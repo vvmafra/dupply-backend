@@ -1,7 +1,7 @@
 import cors from "@fastify/cors";
 import type { FastifyInstance } from "fastify";
 
-import type { AppConfig } from "../config.js";
+import type { AppConfig } from "../infra/env/config.js";
 
 /** Vite dev + preview defaults when `CORS_ALLOWED_ORIGINS` is unset in development. */
 const DEV_DEFAULT_ORIGINS = [

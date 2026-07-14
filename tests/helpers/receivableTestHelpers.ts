@@ -1,15 +1,17 @@
 import { eq } from "drizzle-orm";
 
-import type { AppDeps } from "../../src/application/deps.js";
-import { executeCreateReceivable } from "../../src/application/receivable/commands/createReceivableCommand.js";
-import { loadConfig } from "../../src/config.js";
-import { createDb, runMigrations, type DbHandle } from "../../src/db/index.js";
-import { sellers } from "../../src/db/schema.runtime.js";
-import type { ReceivableMetaData } from "../../src/domain/receivable/types.js";
+import type { AppDeps } from "../../src/compose/deps.js";
+import { createAppDeps } from "../../src/compose/deps.js";
+import { executeCreateReceivable } from "../../src/modules/receivable/application/commands/createReceivableCommand.js";
+import { loadConfig } from "../../src/infra/env/config.js";
+import { createDb, runMigrations, type DbHandle } from "../../src/infra/database/index.js";
+import { sellers } from "../../src/infra/database/schema.runtime.js";
+import type { ReceivableMetaData } from "../../src/modules/receivable/domain/types.js";
 import {
   completeCompanyMetaData,
   insertAccount,
 } from "./sellerTestHelpers.js";
+import { createGateways } from "../../src/infra/gateways/factories/createGateways.js";
 
 export { completeCompanyMetaData };
 
@@ -36,7 +38,7 @@ export async function createTestContext(): Promise<{ deps: AppDeps; handle: DbHa
   const handle = createDb("file::memory:");
   await runMigrations(handle);
   const config = loadConfig({ DATABASE_URL: "file::memory:" });
-  return { deps: { db: handle.db, config }, handle };
+  return { deps: createAppDeps({ db: handle.db, config, gateways: createGateways(config) }), handle };
 }
 
 export async function setupActiveSeller(deps: AppDeps): Promise<{

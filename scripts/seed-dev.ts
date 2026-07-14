@@ -10,14 +10,14 @@ import { createId } from "@paralleldrive/cuid2";
 import { eq } from "drizzle-orm";
 import argon2 from "argon2";
 
-import { loadConfig } from "../src/config.js";
-import { createDb } from "../src/db/index.js";
-import { accounts, sellers } from "../src/db/schema.runtime.js";
+import { loadConfig } from "../src/infra/env/config.js";
+import { createDb } from "../src/infra/database/index.js";
+import { accounts, sellers } from "../src/infra/database/schema.runtime.js";
 import {
   EMPTY_BUSINESS_RELATIONS_METADATA,
   EMPTY_COMPANY_METADATA,
   EMPTY_LEGAL_REP_METADATA,
-} from "../src/domain/seller/types.js";
+} from "../src/modules/seller/domain/types.js";
 
 const DEV_PASSWORD = "dev-password-change-me";
 

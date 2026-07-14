@@ -7,14 +7,14 @@ import Fastify from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 import * as jose from "jose";
 
-import { loadConfig } from "../../../src/config.js";
-import { createDb, runMigrations, type DbHandle } from "../../../src/db/index.js";
-import { sellers } from "../../../src/db/schema.runtime.js";
+import { loadConfig } from "../../../src/infra/env/config.js";
+import { createDb, runMigrations, type DbHandle } from "../../../src/infra/database/index.js";
+import { sellers } from "../../../src/infra/database/schema.runtime.js";
 import { registerCookie } from "../../../src/plugins/cookie.js";
 import { requireJwt } from "../../../src/plugins/jwt-auth.js";
-import { registerAuthRoutes } from "../../../src/routes/v1/auth.js";
-import { registerSellerRoutes } from "../../../src/routes/v1/sellers.js";
-import type { AppDeps } from "../../../src/application/deps.js";
+import { registerAuthRoutes } from "../../../src/modules/auth/api/auth.js";
+import { registerSellerRoutes } from "../../../src/modules/seller/api/sellers.js";
+import type { AppDeps } from "../../../src/compose/deps.js";
 import {
   completeBusinessRelationsMetaData,
   completeCompanyMetaData,
@@ -22,6 +22,7 @@ import {
   insertAccount,
   TEST_PASSWORD,
 } from "../../helpers/sellerTestHelpers.js";
+import { createGateways } from "../../../src/infra/gateways/factories/createGateways.js";
 
 type TestApp = {
   app: ReturnType<typeof Fastify>;
@@ -36,7 +37,7 @@ async function createTestApp(): Promise<TestApp> {
     JWT_SECRET: "test-secret-min-16-chars",
     DATABASE_URL: "file::memory:",
   });
-  const deps: AppDeps = { db: handle.db, config };
+  const deps: AppDeps = { db: handle.db, config, gateways: createGateways(config) };
 
   const app = Fastify({ logger: false });
   app.setValidatorCompiler(validatorCompiler);

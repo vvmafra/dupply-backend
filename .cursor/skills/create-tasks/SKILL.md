@@ -22,8 +22,9 @@ Must run **after** `write-techspec`. Requires both `prd.md` and `techspec.md` to
 
 1. Read `tasks/prd-{name}/prd.md` — functional requirements, scope.
 2. Read `tasks/prd-{name}/techspec.md` — components, files changed, test strategy.
-3. Identify natural task boundaries:
-   - One task per logical unit of change (one domain entity, one application handler, one route, one migration, etc.).
+3. Read `docs/ARCHITECTURE-RULES.md` — **modular architecture** (modules + infra, import matrix). Tasks must respect vertical module boundaries and gateway ports.
+4. Identify natural task boundaries:
+   - One task per logical unit of change (one domain entity inside a module, one application handler, one api route, one migration, one infra provider, etc.).
    - Tests for a component should be part of the same task as the implementation — not a separate task.
    - Tasks must be ordered so that dependencies come first.
 
@@ -98,8 +99,8 @@ or decisions that must be respected. Copy code snippets from the techspec if hel
 
 - `tasks/prd-{name}/prd.md` ← read first
 - `tasks/prd-{name}/techspec.md` ← read first
-- `src/path/to/file.ts` ← modify
-- `tests/path/to/file.test.ts` ← create or modify (mirrors `src/`; never put tests in `src/`)
+- `src/modules/{context}/path/to/file.ts` ← modify (or `src/infra/...` for infrastructure)
+- `tests/modules/{context}/path/to/file.test.ts` ← create or modify (mirrors `src/`; never put tests in `src/`)
 ```
 
 ---
@@ -111,5 +112,6 @@ or decisions that must be respected. Copy code snippets from the techspec if hel
 - Tests belong with their implementation task — do not create a standalone "write tests" task.
 - Every `FR-N` from the PRD must be covered by at least one task.
 - Tasks must be ordered by dependency — never reference a task number that comes after in the list.
+- Place new product code under `src/modules/{context}/`; place vendors/config/DB under `src/infra/`. Do not recreate horizontal `src/domain/` or `src/application/` trees.
 - The `<critical>` tag must appear verbatim in every `N_task.md` — it forces the executing agent to read context before coding.
 - Do not exceed ~8 tasks per feature. If you need more, split the feature into sub-features with separate PRDs.

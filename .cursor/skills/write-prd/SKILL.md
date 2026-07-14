@@ -22,10 +22,11 @@ Use this skill at the **start of every feature** — before writing any code, te
 
 Before writing anything:
 
-1. Read `AGENTS.md` for bounded context routing.
-2. Read the relevant `.cursor/rules/` file for the domain being affected (e.g. `receivable-workflows`, `data-models-relationships`).
-3. Read `docs/ARCHITECTURE-RULES.md` (layers, CQRS constraints).
-4. Ask for any missing information:
+1. Read `AGENTS.md` for bounded context routing (`src/modules/{name}/`, `src/infra/`).
+2. Read `docs/ARCHITECTURE-RULES.md` — **modular architecture** (vertical modules + infra, import matrix, CQRS). Mandatory before any PRD that touches structure or new modules.
+3. Read the relevant `.cursor/rules/` file for the domain being affected (e.g. `module-receivables`, `module-registry`, `data-models-relationships`).
+4. Explore existing code under `src/modules/{context}/` and, if integrations are involved, `src/infra/`.
+5. Ask for any missing information:
    - **Feature name** (kebab-case, e.g. `receivable-audit-log`) — used for the folder name.
    - **Description** — what the feature does and why it's needed.
    - Any open business questions you cannot infer from existing docs.
@@ -96,6 +97,7 @@ _(Use numbered IDs so techspec and tasks can reference them.)_
 - Scope: backend only (`src/`), no frontend changes.
 - No new tables / migrations required. _(or: migration required — describe.)_
 - Must preserve existing API contract on `/v1/...`.
+- Follow modular layout: product code in `src/modules/{context}/`; external systems via `src/infra/gateways/`.
 - Details of algorithm and layer design will be defined in the Tech Spec.
 
 ## Out of Scope
@@ -117,4 +119,5 @@ _(Use numbered IDs so techspec and tasks can reference them.)_
 - Functional requirements must be numbered (`FR-N`). TechSpec and task files will reference these IDs.
 - Do not include implementation details (layer choices, file names, code snippets) — that belongs in the TechSpec.
 - Keep "Technical Constraints" at a product level only (no code).
+- Assume product work lands in `src/modules/{context}/` — never propose new top-level `src/domain/` or `src/application/` trees.
 - `tasks/prd-{name}/` folder must be created if it does not exist.

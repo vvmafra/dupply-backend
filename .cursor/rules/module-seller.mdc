@@ -1,6 +1,6 @@
 ---
 description: Módulo seller — entidade cedente, perfil, metadados de negócio e vínculo com wallet
-globs: src/routes/v1/sellers*,src/domain/seller/**,src/application/seller/**
+globs: src/modules/seller/**
 alwaysApply: false
 ---
 

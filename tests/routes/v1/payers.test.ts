@@ -4,10 +4,10 @@ import test from "node:test";
 import Fastify from "fastify";
 import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 
-import { loadConfig } from "../../../src/config.js";
-import type { DbHandle } from "../../../src/db/index.js";
-import { registerPayerRoutes } from "../../../src/routes/v1/payers.js";
-import type { AppDeps } from "../../../src/application/deps.js";
+import { loadConfig } from "../../../src/infra/env/config.js";
+import type { DbHandle } from "../../../src/infra/database/index.js";
+import { registerPayerRoutes } from "../../../src/modules/payer/api/payers.js";
+import type { AppDeps } from "../../../src/compose/deps.js";
 import { createTestContext } from "../../helpers/receivableTestHelpers.js";
 
 async function createPayerApp(): Promise<{
