@@ -1,9 +1,9 @@
 import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
-/** Human authentication identity (seller | risk_analyst | admin). */
+/** Human authentication identity (seller | risk_analyst | admin | investor). */
 export const ACCOUNT_STATUSES = ["active", "inactive"] as const;
-export const ACCOUNT_ROLES = ["seller", "risk_analyst", "admin"] as const;
+export const ACCOUNT_ROLES = ["seller", "risk_analyst", "admin", "investor"] as const;
 
 export const accounts = sqliteTable(
   "accounts",
@@ -26,7 +26,7 @@ export const accounts = sqliteTable(
     ),
     check(
       "accounts_role_check",
-      sql`${t.role} IN ('seller', 'risk_analyst', 'admin')`,
+      sql`${t.role} IN ('seller', 'risk_analyst', 'admin', 'investor')`,
     ),
     index("accounts_role_idx").on(t.role),
     index("accounts_refresh_token_lookup_idx").on(t.refreshTokenLookup),
@@ -231,5 +231,45 @@ export const tradeBillChainRecords = sqliteTable(
     ),
     index("trade_bill_chain_tx_hash_idx").on(t.txHash),
     index("trade_bill_chain_draft_id_idx").on(t.draftId),
+  ],
+);
+
+export const investors = sqliteTable(
+  "investors",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    accountId: text("account_id")
+      .notNull()
+      .unique()
+      .references(() => accounts.id),
+    balanceCents: integer("balance_cents").notNull().default(0),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull().defaultNow(),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().defaultNow(),
+    deletedAt: integer("deleted_at", { mode: "timestamp" }),
+  },
+  (t) => [
+    index("investors_account_id_idx").on(t.accountId),
+  ],
+);
+
+export const investorDeposits = sqliteTable(
+  "investor_deposits",
+  {
+    id: text("id").primaryKey(),
+    investorId: text("investor_id")
+      .notNull()
+      .references(() => investors.id),
+    amountCents: integer("amount_cents").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    externalTxId: text("external_tx_id"),
+    status: text("status").notNull().default("pending"),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull().defaultNow(),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().defaultNow(),
+    deletedAt: integer("deleted_at", { mode: "timestamp" }),
+  },
+  (t) => [
+    uniqueIndex("investor_deposits_idempotency_key_idx").on(t.investorId, t.idempotencyKey),
+    index("investor_deposits_investor_id_idx").on(t.investorId),
   ],
 );

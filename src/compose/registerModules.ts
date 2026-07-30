@@ -16,6 +16,7 @@ import { registerReceivableInternalModule } from "../modules/receivable/api/regi
 import { registerRegistryModule } from "../modules/registry/api/registerRegistryModule.js";
 import { registerRampModule } from "../modules/ramp/api/registerRampModule.js";
 import { registerRampWebhookModule } from "../modules/ramp/api/registerRampWebhookModule.js";
+import { registerInvestorModule } from "../modules/investor/api/registerInvestorModule.js";
 
 /**
  * Registers HTTP plugins and all route modules.
@@ -43,6 +44,7 @@ export async function registerAllModules(
       await registerSellerModule(scope, deps);
       await registerWalletModule(scope, deps);
       await registerReceivableModule(scope, deps);
+      await registerInvestorModule(scope, deps);
     },
     { prefix: "" },
   );

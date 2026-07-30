@@ -1,9 +1,9 @@
-import { check, index, pgTable, text, timestamp, uniqueIndex } from "drizzle-orm/pg-core";
+import { check, index, pgTable, text, timestamp, uniqueIndex, integer } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
-/** Postgres schema (Supabase). Keep in sync with `schema.ts` (SQLite). */
+/** Human authentication identity (seller | risk_analyst | admin | investor). */
 export const ACCOUNT_STATUSES = ["active", "inactive"] as const;
-export const ACCOUNT_ROLES = ["seller", "risk_analyst", "admin"] as const;
+export const ACCOUNT_ROLES = ["seller", "risk_analyst", "admin", "investor"] as const;
 
 export const accounts = pgTable(
   "accounts",
@@ -26,7 +26,7 @@ export const accounts = pgTable(
     ),
     check(
       "accounts_role_check",
-      sql`${t.role} IN ('seller', 'risk_analyst', 'admin')`,
+      sql`${t.role} IN ('seller', 'risk_analyst', 'admin', 'investor')`,
     ),
     index("accounts_role_idx").on(t.role),
     index("accounts_refresh_token_lookup_idx").on(t.refreshTokenLookup),
@@ -231,5 +231,45 @@ export const tradeBillChainRecords = pgTable(
     ),
     index("trade_bill_chain_tx_hash_idx").on(t.txHash),
     index("trade_bill_chain_draft_id_idx").on(t.draftId),
+  ],
+);
+
+export const investors = pgTable(
+  "investors",
+  {
+    id: text("id").primaryKey(),
+    name: text("name").notNull(),
+    accountId: text("account_id")
+      .notNull()
+      .unique()
+      .references(() => accounts.id),
+    balanceCents: integer("balance_cents").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    index("investors_account_id_idx").on(t.accountId),
+  ],
+);
+
+export const investorDeposits = pgTable(
+  "investor_deposits",
+  {
+    id: text("id").primaryKey(),
+    investorId: text("investor_id")
+      .notNull()
+      .references(() => investors.id),
+    amountCents: integer("amount_cents").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    externalTxId: text("external_tx_id"),
+    status: text("status").notNull().default("pending"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("investor_deposits_idempotency_key_idx").on(t.investorId, t.idempotencyKey),
+    index("investor_deposits_investor_id_idx").on(t.investorId),
   ],
 );

@@ -22,3 +22,6 @@ export const rampQuotes = mod.rampQuotes;
 export const rampOrders = mod.rampOrders;
 export const tradeBillDrafts = mod.tradeBillDrafts;
 export const tradeBillChainRecords = mod.tradeBillChainRecords;
+export const investors = mod.investors;
+export const investorDeposits = mod.investorDeposits;
+

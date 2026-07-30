@@ -4,6 +4,7 @@ export const ACCOUNT_ROLES = [
   "risk_analyst",
   "risk_analyst_agent",
   "admin",
+  "investor",
 ] as const;
 export type AccountRole = (typeof ACCOUNT_ROLES)[number];
 

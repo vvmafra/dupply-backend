@@ -12,7 +12,8 @@ import argon2 from "argon2";
 
 import { loadConfig } from "../src/infra/env/config.js";
 import { createDb } from "../src/infra/database/index.js";
-import { accounts, sellers } from "../src/infra/database/schema.runtime.js";
+import { runTransaction } from "../src/infra/database/transaction.js";
+import { accounts, sellers, investors } from "../src/infra/database/schema.runtime.js";
 import {
   EMPTY_BUSINESS_RELATIONS_METADATA,
   EMPTY_COMPANY_METADATA,
@@ -26,6 +27,11 @@ const DEV_SELLER = {
   name: "Dev Seller",
 };
 
+const DEV_INVESTOR = {
+  email: "investor@dupply.dev.local",
+  name: "Dev Investor",
+};
+
 async function main(): Promise<void> {
   const config = loadConfig();
   const dbHandle = createDb(config.DATABASE_URL);
@@ -33,52 +39,93 @@ async function main(): Promise<void> {
   const passwordHash = await argon2.hash(DEV_PASSWORD);
   const now = new Date();
 
-  const [existing] = await db
+  // 1. Seed Seller
+  const [existingSeller] = await db
     .select()
     .from(accounts)
     .where(eq(accounts.email, DEV_SELLER.email))
     .limit(1);
 
-  if (existing) {
+  if (!existingSeller) {
+    const accountId = createId();
+    const sellerId = createId();
+
+    await runTransaction(db, config.DATABASE_URL, (tx, exec) => {
+      exec(
+        tx.insert(accounts).values({
+          id: accountId,
+          email: DEV_SELLER.email,
+          passwordHash,
+          role: "seller",
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        }),
+      );
+
+      exec(
+        tx.insert(sellers).values({
+          id: sellerId,
+          name: DEV_SELLER.name,
+          status: "active",
+          accountId,
+          companyMetaData: EMPTY_COMPANY_METADATA,
+          legalRepresentativeMetaData: EMPTY_LEGAL_REP_METADATA,
+          businessRelationsMetaData: EMPTY_BUSINESS_RELATIONS_METADATA,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      );
+    });
+
+    console.log(`created account: ${DEV_SELLER.email} (role=seller)`);
+    console.log(`created seller: ${DEV_SELLER.name} id=${sellerId} status=active`);
+  } else {
     console.log(`skip (exists): ${DEV_SELLER.email}`);
-    await dbHandle.close();
-    return;
   }
 
-  const accountId = createId();
-  const sellerId = createId();
+  // 2. Seed Investor
+  const [existingInvestor] = await db
+    .select()
+    .from(accounts)
+    .where(eq(accounts.email, DEV_INVESTOR.email))
+    .limit(1);
 
-  await db.transaction(async (tx) => {
-    await tx.insert(accounts).values({
-      id: accountId,
-      email: DEV_SELLER.email,
-      passwordHash,
-      role: "seller",
-      status: "active",
-      refreshToken: null,
-      refreshTokenLookup: null,
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
+  if (!existingInvestor) {
+    const accountId = createId();
+    const investorId = createId();
+
+    await runTransaction(db, config.DATABASE_URL, (tx, exec) => {
+      exec(
+        tx.insert(accounts).values({
+          id: accountId,
+          email: DEV_INVESTOR.email,
+          passwordHash,
+          role: "investor",
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        }),
+      );
+
+      exec(
+        tx.insert(investors).values({
+          id: investorId,
+          name: DEV_INVESTOR.name,
+          accountId,
+          balanceCents: 0,
+          createdAt: now,
+          updatedAt: now,
+        }),
+      );
     });
 
-    await tx.insert(sellers).values({
-      id: sellerId,
-      name: DEV_SELLER.name,
-      status: "active",
-      accountId,
-      companyMetaData: EMPTY_COMPANY_METADATA,
-      legalRepresentativeMetaData: EMPTY_LEGAL_REP_METADATA,
-      businessRelationsMetaData: EMPTY_BUSINESS_RELATIONS_METADATA,
-      walletId: null,
-      createdAt: now,
-      updatedAt: now,
-      deletedAt: null,
-    });
-  });
+    console.log(`created account: ${DEV_INVESTOR.email} (role=investor)`);
+    console.log(`created investor: ${DEV_INVESTOR.name} id=${investorId}`);
+  } else {
+    console.log(`skip (exists): ${DEV_INVESTOR.email}`);
+  }
 
-  console.log(`created account: ${DEV_SELLER.email} (role=seller)`);
-  console.log(`created seller: ${DEV_SELLER.name} id=${sellerId} status=active`);
   console.log(`password: ${DEV_PASSWORD}`);
   console.log("\nLogin: POST /v1/auth/login with email + password above.");
 
