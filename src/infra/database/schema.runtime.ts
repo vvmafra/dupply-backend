@@ -24,4 +24,4 @@ export const tradeBillDrafts = mod.tradeBillDrafts;
 export const tradeBillChainRecords = mod.tradeBillChainRecords;
 export const investors = mod.investors;
 export const investorDeposits = mod.investorDeposits;
-
+export const investorWithdrawals = mod.investorWithdrawals;

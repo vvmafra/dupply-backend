@@ -273,3 +273,24 @@ export const investorDeposits = pgTable(
     index("investor_deposits_investor_id_idx").on(t.investorId),
   ],
 );
+
+export const investorWithdrawals = pgTable(
+  "investor_withdrawals",
+  {
+    id: text("id").primaryKey(),
+    investorId: text("investor_id")
+      .notNull()
+      .references(() => investors.id),
+    amountCents: integer("amount_cents").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    pixKey: text("pix_key").notNull(),
+    status: text("status").notNull().default("completed"),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+    deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  },
+  (t) => [
+    uniqueIndex("investor_withdrawals_idempotency_key_idx").on(t.investorId, t.idempotencyKey),
+    index("investor_withdrawals_investor_id_idx").on(t.investorId),
+  ],
+);

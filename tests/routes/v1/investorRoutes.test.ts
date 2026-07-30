@@ -168,3 +168,101 @@ test("Investor routes - non-investor roles (seller) return 403", async () => {
     await handle.close();
   }
 });
+
+test("Investor routes - withdraw flow & list withdrawals", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email, investorId } = await insertInvestor(deps);
+    const token = await loginAs(app, email);
+
+    // 1. Deposit first to get balance
+    const depRes = await app.inject({
+      method: "POST",
+      url: "/v1/investors/deposit",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        amount: 500.00,
+        idempotencyKey: "dep-key",
+      },
+    });
+    assert.equal(depRes.statusCode, 201);
+
+    // 2. Perform a withdrawal
+    const withdrawRes = await app.inject({
+      method: "POST",
+      url: "/v1/investors/withdraw",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        amount: 120.50,
+        idempotencyKey: "unique-withdraw-key-1",
+        pixKey: "my-pix-key",
+      },
+    });
+
+    assert.equal(withdrawRes.statusCode, 201);
+    const withdrawBody = withdrawRes.json() as {
+      id: string;
+      investorId: string;
+      amount: number;
+      pixKey: string;
+      status: string;
+    };
+    assert.ok(withdrawBody.id);
+    assert.equal(withdrawBody.investorId, investorId);
+    assert.equal(withdrawBody.amount, 120.50);
+    assert.equal(withdrawBody.pixKey, "my-pix-key");
+    assert.equal(withdrawBody.status, "completed");
+
+    // 3. Query profile to check balance is deducted (500 - 120.50 = 379.50)
+    const meRes = await app.inject({
+      method: "GET",
+      url: "/v1/investors/me",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(meRes.statusCode, 200);
+    assert.equal((meRes.json() as any).balance, 379.50);
+
+    // 4. List withdrawals
+    const listRes = await app.inject({
+      method: "GET",
+      url: "/v1/investors/withdrawals",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(listRes.statusCode, 200);
+    const listBody = listRes.json() as any[];
+    assert.equal(listBody.length, 1);
+    assert.equal(listBody[0].id, withdrawBody.id);
+    assert.equal(listBody[0].amount, 120.50);
+    assert.equal(listBody[0].pixKey, "my-pix-key");
+    assert.equal(listBody[0].idempotencyKey, "unique-withdraw-key-1");
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("Investor routes - withdraw returns 400 for insufficient funds", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await insertInvestor(deps);
+    const token = await loginAs(app, email);
+
+    // Attempt to withdraw when balance is 0
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/investors/withdraw",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        amount: 50.00,
+        idempotencyKey: "w-key",
+        pixKey: "pix-key",
+      },
+    });
+
+    assert.equal(res.statusCode, 400);
+    assert.equal((res.json() as any).error, "insufficient_funds");
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});

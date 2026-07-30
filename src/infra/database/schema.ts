@@ -273,3 +273,24 @@ export const investorDeposits = sqliteTable(
     index("investor_deposits_investor_id_idx").on(t.investorId),
   ],
 );
+
+export const investorWithdrawals = sqliteTable(
+  "investor_withdrawals",
+  {
+    id: text("id").primaryKey(),
+    investorId: text("investor_id")
+      .notNull()
+      .references(() => investors.id),
+    amountCents: integer("amount_cents").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    pixKey: text("pix_key").notNull(),
+    status: text("status").notNull().default("completed"),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull().defaultNow(),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().defaultNow(),
+    deletedAt: integer("deleted_at", { mode: "timestamp" }),
+  },
+  (t) => [
+    uniqueIndex("investor_withdrawals_idempotency_key_idx").on(t.investorId, t.idempotencyKey),
+    index("investor_withdrawals_investor_id_idx").on(t.investorId),
+  ],
+);

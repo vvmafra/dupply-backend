@@ -1,7 +1,9 @@
 export const INVESTOR_ERROR_CODES = {
   NOT_FOUND: "investor_not_found",
   IDEMPOTENCY_CONFLICT: "deposit_idempotency_conflict",
+  WITHDRAW_IDEMPOTENCY_CONFLICT: "withdraw_idempotency_conflict",
   INVALID_AMOUNT: "invalid_amount",
+  INSUFFICIENT_FUNDS: "insufficient_funds",
 } as const;
 
 export type InvestorErrorCode =
