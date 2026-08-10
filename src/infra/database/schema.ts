@@ -1,4 +1,4 @@
-import { check, index, integer, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
+import { check, index, integer, real, sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core";
 import { sql } from "drizzle-orm";
 
 /** Human authentication identity (seller | risk_analyst | admin | investor). */
@@ -167,6 +167,9 @@ export const receivables = sqliteTable(
     normalizedFiscalDocumentKey: text("normalized_fiscal_document_key"),
     value: text("value").notNull(),
     proposedValue: text("proposed_value"),
+    fundedCents: integer("funded_cents").notNull().default(0),
+    targetFundingCents: integer("target_funding_cents").notNull().default(0),
+    yieldRateAnnual: real("yield_rate_annual").notNull().default(0),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull().defaultNow(),
     updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().defaultNow(),
     deletedAt: integer("deleted_at", { mode: "timestamp" }),
@@ -182,14 +185,14 @@ export const receivables = sqliteTable(
       .where(
         sql`${t.deletedAt} IS NULL
           AND ${t.normalizedBillNumber} IS NOT NULL
-          AND ${t.status} IN ('created','under_review','offer','confirmed','processing','completed','overdue')`,
+          AND ${t.status} IN ('created','under_review','offer','confirmed','funding','funded','processing','completed','overdue')`,
       ),
     uniqueIndex("receivables_seller_fiscal_key_active_unique")
       .on(t.sellerId, t.normalizedFiscalDocumentKey)
       .where(
         sql`${t.deletedAt} IS NULL
           AND ${t.normalizedFiscalDocumentKey} IS NOT NULL
-          AND ${t.status} IN ('created','under_review','offer','confirmed','processing','completed','overdue')`,
+          AND ${t.status} IN ('created','under_review','offer','confirmed','funding','funded','processing','completed','overdue')`,
       ),
   ],
 );
@@ -292,5 +295,29 @@ export const investorWithdrawals = sqliteTable(
   (t) => [
     uniqueIndex("investor_withdrawals_idempotency_key_idx").on(t.investorId, t.idempotencyKey),
     index("investor_withdrawals_investor_id_idx").on(t.investorId),
+  ],
+);
+
+export const investorInvestments = sqliteTable(
+  "investor_investments",
+  {
+    id: text("id").primaryKey(),
+    investorId: text("investor_id")
+      .notNull()
+      .references(() => investors.id),
+    receivableId: text("receivable_id")
+      .notNull()
+      .references(() => receivables.id),
+    amountCents: integer("amount_cents").notNull(),
+    idempotencyKey: text("idempotency_key").notNull(),
+    status: text("status").notNull().default("active"),
+    createdAt: integer("created_at", { mode: "timestamp" }).notNull().defaultNow(),
+    updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().defaultNow(),
+    deletedAt: integer("deleted_at", { mode: "timestamp" }),
+  },
+  (t) => [
+    uniqueIndex("investor_investments_idempotency_key_idx").on(t.investorId, t.idempotencyKey),
+    index("investor_investments_investor_id_idx").on(t.investorId),
+    index("investor_investments_receivable_id_idx").on(t.receivableId),
   ],
 );

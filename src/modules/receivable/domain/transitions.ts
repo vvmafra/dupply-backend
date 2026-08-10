@@ -6,6 +6,8 @@ export const RECEIVABLE_STATUS = {
   OFFER: "offer",
   REJECTED: "rejected",
   CONFIRMED: "confirmed",
+  FUNDING: "funding",
+  FUNDED: "funded",
   PROCESSING: "processing",
   COMPLETED: "completed",
   PAYER_SETTLED: "payer_settled",
@@ -72,10 +74,21 @@ export function assertReceivableTransition(
     to === RECEIVABLE_STATUS.PROCESSING ||
     to === RECEIVABLE_STATUS.COMPLETED ||
     to === RECEIVABLE_STATUS.PAYER_SETTLED ||
-    to === RECEIVABLE_STATUS.OVERDUE
+    to === RECEIVABLE_STATUS.OVERDUE ||
+    to === RECEIVABLE_STATUS.FUNDING ||
+    to === RECEIVABLE_STATUS.FUNDED
   ) {
     if (actor.kind !== "system") {
       throw new ReceivableTransitionError("system_actor_required");
+    }
+    if (from === RECEIVABLE_STATUS.CONFIRMED && to === RECEIVABLE_STATUS.FUNDING) {
+      return;
+    }
+    if (from === RECEIVABLE_STATUS.FUNDING && to === RECEIVABLE_STATUS.FUNDED) {
+      return;
+    }
+    if (from === RECEIVABLE_STATUS.FUNDED && to === RECEIVABLE_STATUS.PROCESSING) {
+      return;
     }
     if (from === RECEIVABLE_STATUS.CONFIRMED && to === RECEIVABLE_STATUS.PROCESSING) {
       return;

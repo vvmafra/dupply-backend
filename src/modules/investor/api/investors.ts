@@ -5,9 +5,11 @@ import { z } from "zod";
 import type { AppDeps } from "../../../compose/deps.js";
 import { executeDeposit } from "../application/commands/executeDepositCommand.js";
 import { executeWithdraw } from "../application/commands/executeWithdrawCommand.js";
+import { executeInvest } from "../application/commands/executeInvestCommand.js";
 import { executeGetInvestor } from "../application/queries/executeGetInvestorQuery.js";
 import { executeListDeposits } from "../application/queries/executeListDepositsQuery.js";
 import { executeListWithdrawals } from "../application/queries/executeListWithdrawalsQuery.js";
+import { executeListInvestments } from "../application/queries/executeListInvestmentsQuery.js";
 import {
   INVESTOR_ERROR_CODES,
   InvestorError,
@@ -27,12 +29,22 @@ const withdrawBodySchema = z.object({
   pixKey: z.string().min(1),
 });
 
+const investBodySchema = z.object({
+  receivableId: z.string().min(1),
+  amount: z.number().positive(),
+  idempotencyKey: z.string().min(1),
+});
+
 const INVESTOR_ERROR_HTTP: Partial<Record<InvestorErrorCode, number>> = {
   [INVESTOR_ERROR_CODES.NOT_FOUND]: 404,
   [INVESTOR_ERROR_CODES.IDEMPOTENCY_CONFLICT]: 409,
   [INVESTOR_ERROR_CODES.WITHDRAW_IDEMPOTENCY_CONFLICT]: 409,
   [INVESTOR_ERROR_CODES.INVALID_AMOUNT]: 400,
   [INVESTOR_ERROR_CODES.INSUFFICIENT_FUNDS]: 400,
+  [INVESTOR_ERROR_CODES.RECEIVABLE_NOT_FOUND]: 404,
+  [INVESTOR_ERROR_CODES.RECEIVABLE_NOT_OPEN_FOR_FUNDING]: 400,
+  [INVESTOR_ERROR_CODES.INVESTMENT_EXCEEDS_REMAINING_FUNDING]: 400,
+  [INVESTOR_ERROR_CODES.INVEST_IDEMPOTENCY_CONFLICT]: 409,
 };
 
 function mapInvestorError(e: unknown, reply: { code: (n: number) => { send: (b: unknown) => unknown } }): unknown {
@@ -165,6 +177,57 @@ export async function registerInvestorRoutes(
       if (!request.auth) return reply.code(401).send({ error: "unauthorized" });
       try {
         return await executeGetInvestor(deps, request.auth.sub);
+      } catch (e) {
+        const mapped = mapInvestorError(e, reply);
+        if (mapped) return mapped;
+        throw e;
+      }
+    },
+  );
+
+  api.post(
+    "/v1/investors/invest",
+    {
+      preHandler: requireRoles("investor"),
+      schema: {
+        tags: ["Investors"],
+        summary: "Realizar investimento em cota de recebível",
+        body: investBodySchema,
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    async (request, reply) => {
+      if (!request.auth) return reply.code(401).send({ error: "unauthorized" });
+      try {
+        const result = await executeInvest(deps, {
+          accountId: request.auth.sub,
+          receivableId: request.body.receivableId,
+          amountReais: request.body.amount,
+          idempotencyKey: request.body.idempotencyKey,
+        });
+        return reply.code(201).send(result);
+      } catch (e) {
+        const mapped = mapInvestorError(e, reply);
+        if (mapped) return mapped;
+        throw e;
+      }
+    },
+  );
+
+  api.get(
+    "/v1/investors/investments",
+    {
+      preHandler: requireRoles("investor"),
+      schema: {
+        tags: ["Investors"],
+        summary: "Listar investimentos realizados",
+        security: [{ bearerAuth: [] }],
+      },
+    },
+    async (request, reply) => {
+      if (!request.auth) return reply.code(401).send({ error: "unauthorized" });
+      try {
+        return await executeListInvestments(deps, request.auth.sub);
       } catch (e) {
         const mapped = mapInvestorError(e, reply);
         if (mapped) return mapped;

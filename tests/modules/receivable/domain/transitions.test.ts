@@ -123,6 +123,18 @@ test("system payer settlement paths", () => {
   });
 });
 
+test("system advance confirmed → funding → funded → processing", () => {
+  assertReceivableTransition(RECEIVABLE_STATUS.CONFIRMED, RECEIVABLE_STATUS.FUNDING, {
+    kind: "system",
+  });
+  assertReceivableTransition(RECEIVABLE_STATUS.FUNDING, RECEIVABLE_STATUS.FUNDED, {
+    kind: "system",
+  });
+  assertReceivableTransition(RECEIVABLE_STATUS.FUNDED, RECEIVABLE_STATUS.PROCESSING, {
+    kind: "system",
+  });
+});
+
 test("processing requires system actor", () => {
   assert.throws(
     () =>
@@ -145,8 +157,8 @@ test("terminal re-entry reproved → under_review throws", () => {
   );
 });
 
-test("RECEIVABLE_STATUS has exactly 10 active statuses", () => {
-  assert.equal(Object.keys(RECEIVABLE_STATUS).length, 10);
+test("RECEIVABLE_STATUS has exactly 12 active statuses", () => {
+  assert.equal(Object.keys(RECEIVABLE_STATUS).length, 12);
 });
 
 test("isReceivableStatus accepts legacy historical values", () => {

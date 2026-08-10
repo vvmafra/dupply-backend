@@ -1,7 +1,13 @@
-import { eq } from "drizzle-orm";
+import { and, eq, inArray } from "drizzle-orm";
 
 import type { AppDeps } from "../../../../compose/deps.js";
-import { receivables } from "../../../../infra/database/schema.runtime.js";
+import {
+  investors,
+  investorInvestments,
+  receivables,
+} from "../../../../infra/database/schema.runtime.js";
+import { runTransaction } from "../../../../infra/database/transaction.js";
+import { executePayoutWrites } from "../../../settlement/application/commands/executePayoutCommand.js";
 import {
   assertReceivableTransition,
   RECEIVABLE_STATUS,
@@ -33,8 +39,49 @@ export async function executeSystemPayerSettlement(
 
   assertReceivableTransition(from, to, { kind: "system" });
 
-  await deps.db
-    .update(receivables)
-    .set({ status: to, updatedAt: new Date() })
-    .where(eq(receivables.id, input.receivableId));
+  // 1. Fetch investments and investors if we are transitioning to settled
+  let activeInvestments: any[] = [];
+  let investorsList: any[] = [];
+
+  if (to === RECEIVABLE_STATUS.PAYER_SETTLED) {
+    activeInvestments = await deps.db
+      .select()
+      .from(investorInvestments)
+      .where(
+        and(
+          eq(investorInvestments.receivableId, input.receivableId),
+          eq(investorInvestments.status, "active"),
+        ),
+      );
+
+    if (activeInvestments.length > 0) {
+      const investorIds = [...new Set(activeInvestments.map((i) => i.investorId))];
+      investorsList = await deps.db
+        .select()
+        .from(investors)
+        .where(inArray(investors.id, investorIds));
+    }
+  }
+
+  const now = new Date();
+
+  // 2. Execute updates and payout inside transaction
+  await runTransaction(deps.db, deps.config.DATABASE_URL, (tx, exec) => {
+    if (to === RECEIVABLE_STATUS.PAYER_SETTLED && activeInvestments.length > 0) {
+      executePayoutWrites(tx, exec, {
+        receivableId: input.receivableId,
+        yieldRateAnnual: Number(row.yieldRateAnnual || 0),
+        activeInvestments,
+        investorsList,
+        paymentDate: now,
+      });
+    }
+
+    exec(
+      tx
+        .update(receivables)
+        .set({ status: to, updatedAt: now })
+        .where(eq(receivables.id, input.receivableId)),
+    );
+  });
 }

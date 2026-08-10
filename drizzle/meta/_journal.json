@@ -85,6 +85,13 @@
       "when": 1780100000000,
       "tag": "0011_add_investor_withdrawals",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "6",
+      "when": 1780200000000,
+      "tag": "0012_add_investor_investments",
+      "breakpoints": true
     }
   ]
 }
