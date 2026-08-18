@@ -28,7 +28,7 @@ export function assertCanUpdateReceivableDraft(receivable: {
 
 export function assertCanViewReceivable(
   actor: { profileId: string; role: string },
-  receivable: { sellerId: string },
+  receivable: { sellerId: string; status: string },
 ): boolean {
   if (actor.role === "seller") {
     return actor.profileId === receivable.sellerId;
@@ -39,6 +39,17 @@ export function assertCanViewReceivable(
     actor.role === "admin"
   ) {
     return true;
+  }
+  // Investors are allowed to view receivables that are open for funding or in later lifecycle stages
+  if (actor.role === "investor") {
+    return [
+      RECEIVABLE_STATUS.FUNDING,
+      RECEIVABLE_STATUS.FUNDED,
+      RECEIVABLE_STATUS.PROCESSING,
+      RECEIVABLE_STATUS.COMPLETED,
+      RECEIVABLE_STATUS.PAYER_SETTLED,
+      RECEIVABLE_STATUS.OVERDUE,
+    ].includes(receivable.status as any);
   }
   return false;
 }

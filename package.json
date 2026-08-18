@@ -17,6 +17,7 @@
     "db:deploy": "NODE_OPTIONS='--dns-result-order=ipv4first' tsx --env-file=.env scripts/db-deploy.ts",
     "db:reset": "NODE_OPTIONS='--dns-result-order=ipv4first' tsx --env-file=.env scripts/db-reset.ts",
     "seed:dev": "tsx --env-file=.env scripts/seed-dev.ts",
+    "db:advance": "tsx --env-file=.env scripts/advance-receivables.ts",
     "etherfuse:smoke": "tsx scripts/etherfuse-smoke.ts",
     "etherfuse:kyc-smoke": "NODE_OPTIONS='--dns-result-order=ipv4first' tsx --env-file=.env scripts/etherfuse-kyc-smoke.ts",
     "test": "node --import tsx --test $(find tests -name '*.test.ts')"

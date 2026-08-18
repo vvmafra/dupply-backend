@@ -13,4 +13,5 @@ pub enum RegistryError {
     FraudDeclarationsRequired = 7,
     NotFound = 8,
     InvalidDiscountFlags = 9,
+    InvalidStateTransition = 10,
 }

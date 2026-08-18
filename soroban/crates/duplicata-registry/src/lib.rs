@@ -6,7 +6,7 @@ use error::RegistryError;
 use soroban_sdk::{
     contract, contractevent, contractimpl, panic_with_error, Address, Env, Symbol, symbol_short,
 };
-use types::{DataKey, IssuePayload, TradeBill};
+use types::{BillStatus, DataKey, IssuePayload, TradeBill};
 
 const KEY_ADMIN: Symbol = symbol_short!("ADMIN");
 const KEY_NEXT: Symbol = symbol_short!("NEXT_ID");
@@ -36,6 +36,40 @@ fn require_initialized(env: &Env) -> Address {
         .expect("admin")
 }
 
+fn validate_transition(
+    env: &Env,
+    from: BillStatus,
+    to: BillStatus,
+    updater: &Address,
+    issuer: &Address,
+    admin: &Address,
+) {
+    if updater == admin {
+        let valid = match (from, to) {
+            (BillStatus::Issued, BillStatus::Funding) => true,
+            (BillStatus::Issued, BillStatus::Cancelled) => true,
+            (BillStatus::Funding, BillStatus::Funded) => true,
+            (BillStatus::Funding, BillStatus::Cancelled) => true,
+            (BillStatus::Funded, BillStatus::Settled) => true,
+            (BillStatus::Funded, BillStatus::Overdue) => true,
+            (BillStatus::Overdue, BillStatus::Settled) => true,
+            (BillStatus::Settled, BillStatus::PaidOut) => true,
+            _ => false,
+        };
+        if !valid {
+            panic_with_error!(env, RegistryError::InvalidStateTransition);
+        }
+    } else if updater == issuer {
+        if from == BillStatus::Issued && to == BillStatus::Cancelled {
+            // Issuer can only cancel when in Issued state
+        } else {
+            panic_with_error!(env, RegistryError::Unauthorized);
+        }
+    } else {
+        panic_with_error!(env, RegistryError::Unauthorized);
+    }
+}
+
 #[contractevent]
 pub struct TradeBillIssued {
     #[topic]
@@ -47,6 +81,15 @@ pub struct TradeBillIssued {
     pub due_date_unix: u64,
     pub discount_eligible: bool,
     pub issued_at: u64,
+}
+
+#[contractevent]
+pub struct TradeBillStatusUpdated {
+    #[topic]
+    pub id: u64,
+    #[topic]
+    pub status: BillStatus,
+    pub updated_at: u64,
 }
 
 fn validate_payload(env: &Env, p: &IssuePayload) {
@@ -142,6 +185,7 @@ impl TradeBillRegistry {
             id,
             issuer: issuer.clone(),
             issued_at,
+            status: BillStatus::Issued,
             kind: payload.kind.clone(),
             draft_number_hash: payload.draft_number_hash.clone(),
             invoice_number_hash: payload.invoice_number_hash.clone(),
@@ -180,6 +224,32 @@ impl TradeBillRegistry {
         .publish(&env);
 
         id
+    }
+
+    pub fn update_bill_status(env: Env, updater: Address, id: u64, status: BillStatus) {
+        let admin = require_initialized(&env);
+        updater.require_auth();
+
+        let key = DataKey::Rec(id);
+        let mut bill: TradeBill = match env.storage().persistent().get(&key) {
+            Some(b) => b,
+            None => panic_with_error!(&env, RegistryError::NotFound),
+        };
+
+        validate_transition(&env, bill.status, status, &updater, &bill.issuer, &admin);
+
+        bill.status = status;
+        env.storage().persistent().set(&key, &bill);
+        bump_persistent(&env, &key);
+        bump_instance(&env);
+
+        let updated_at = env.ledger().timestamp();
+        TradeBillStatusUpdated {
+            id,
+            status,
+            updated_at,
+        }
+        .publish(&env);
     }
 }
 

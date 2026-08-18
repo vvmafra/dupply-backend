@@ -13,7 +13,7 @@ import argon2 from "argon2";
 import { loadConfig } from "../src/infra/env/config.js";
 import { createDb } from "../src/infra/database/index.js";
 import { runTransaction } from "../src/infra/database/transaction.js";
-import { accounts, sellers, investors } from "../src/infra/database/schema.runtime.js";
+import { accounts, sellers, investors, payers, receivables } from "../src/infra/database/schema.runtime.js";
 import {
   EMPTY_BUSINESS_RELATIONS_METADATA,
   EMPTY_COMPANY_METADATA,
@@ -113,7 +113,7 @@ async function main(): Promise<void> {
           id: investorId,
           name: DEV_INVESTOR.name,
           accountId,
-          balanceCents: 0,
+          balanceCents: 100000000,
           createdAt: now,
           updatedAt: now,
         }),
@@ -121,9 +121,97 @@ async function main(): Promise<void> {
     });
 
     console.log(`created account: ${DEV_INVESTOR.email} (role=investor)`);
-    console.log(`created investor: ${DEV_INVESTOR.name} id=${investorId}`);
+    console.log(`created investor: ${DEV_INVESTOR.name} id=${investorId} with R$ 1,000,000.00 balance`);
   } else {
     console.log(`skip (exists): ${DEV_INVESTOR.email}`);
+    const [inv] = await db
+      .select()
+      .from(accounts)
+      .where(eq(accounts.email, DEV_INVESTOR.email))
+      .limit(1);
+    if (inv) {
+      await db.update(investors)
+        .set({ balanceCents: 100000000 })
+        .where(eq(investors.accountId, inv.id));
+      console.log(`Forced investor balance to R$ 1,000,000.00`);
+    }
+  }
+
+  // 3. Seed some Receivables in funding status so the investor has opportunities
+  const [sellerRow] = await db
+    .select()
+    .from(sellers)
+    .where(eq(sellers.name, DEV_SELLER.name))
+    .limit(1);
+
+  if (sellerRow) {
+    // Clear existing receivables for seller on seed run
+    await db.delete(receivables).where(eq(receivables.sellerId, sellerRow.id));
+    // Clear existing payers to avoid UNIQUE constraint failures
+    await db.delete(payers).where(eq(payers.cnpj, "12345678000199"));
+    await db.delete(payers).where(eq(payers.cnpj, "98765432000188"));
+
+    const payerId1 = createId();
+    const payerId2 = createId();
+    const recId1 = createId();
+    const recId2 = createId();
+
+    await runTransaction(db, config.DATABASE_URL, (tx, exec) => {
+      exec(
+        tx.insert(payers).values({
+          id: payerId1,
+          legalName: "Payer Alpha S.A.",
+          email: "financial@alpha.com",
+          cnpj: "12345678000199",
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        })
+      );
+      exec(
+        tx.insert(payers).values({
+          id: payerId2,
+          legalName: "Payer Beta S.A.",
+          email: "financial@beta.com",
+          cnpj: "98765432000188",
+          status: "active",
+          createdAt: now,
+          updatedAt: now,
+        })
+      );
+
+      exec(
+        tx.insert(receivables).values({
+          id: recId1,
+          status: "funding",
+          sellerId: sellerRow.id,
+          payerId: payerId1,
+          value: "25000000",
+          targetFundingCents: 25000000, // R$ 250.000,00
+          fundedCents: 5000000, // R$ 50.000,00 already funded
+          yieldRateAnnual: 0.18, // 18%
+          createdAt: now,
+          updatedAt: now,
+        })
+      );
+
+      exec(
+        tx.insert(receivables).values({
+          id: recId2,
+          status: "funding",
+          sellerId: sellerRow.id,
+          payerId: payerId2,
+          value: "45000000",
+          targetFundingCents: 45000000, // R$ 450.000,00
+          fundedCents: 0,
+          yieldRateAnnual: 0.22, // 22%
+          createdAt: now,
+          updatedAt: now,
+        })
+      );
+    });
+
+    console.log("Seeded 2 mock receivables in 'funding' status.");
   }
 
   console.log(`password: ${DEV_PASSWORD}`);

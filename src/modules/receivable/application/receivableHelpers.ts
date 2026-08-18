@@ -72,6 +72,9 @@ export function mapReceivableRow(row: ReceivableDbRow): ReceivableRow {
     value: valueDbCentsTextToReais(row.value),
     proposedValue:
       row.proposedValue == null ? null : valueDbCentsTextToReais(row.proposedValue),
+    targetFunding: toReais(row.targetFundingCents),
+    funded: toReais(row.fundedCents),
+    yieldRateAnnual: row.yieldRateAnnual,
     createdAt: row.createdAt,
     updatedAt: row.updatedAt,
     deletedAt: row.deletedAt,

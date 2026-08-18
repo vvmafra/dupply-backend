@@ -61,11 +61,24 @@ pub struct IssuePayload {
 }
 
 #[contracttype]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BillStatus {
+    Issued = 0,
+    Funding = 1,
+    Funded = 2,
+    Settled = 3,
+    Overdue = 4,
+    PaidOut = 5,
+    Cancelled = 6,
+}
+
+#[contracttype]
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TradeBill {
     pub id: u64,
     pub issuer: Address,
     pub issued_at: u64,
+    pub status: BillStatus,
     pub kind: BillKind,
     pub draft_number_hash: BytesN<32>,
     pub invoice_number_hash: BytesN<32>,

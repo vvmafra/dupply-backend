@@ -1,7 +1,7 @@
 #![cfg(test)]
 
 use crate::types::{
-    BillKind, DraweeAcceptance, EvidenceKind, FiscalDocKind, IssuePayload,
+    BillKind, BillStatus, DraweeAcceptance, EvidenceKind, FiscalDocKind, IssuePayload,
 };
 use crate::{TradeBillRegistry, TradeBillRegistryClient};
 use soroban_sdk::testutils::Address as _;
@@ -58,6 +58,7 @@ fn initialize_set_admin_allowlist_and_issue() {
     assert_eq!(bill.id, 1);
     assert_eq!(bill.issuer, issuer);
     assert_eq!(bill.face_value_cents, 1_000_000);
+    assert_eq!(bill.status, BillStatus::Issued);
 }
 
 #[test]
@@ -104,4 +105,139 @@ fn discount_eligible_requires_attachments() {
     p.discount_eligible = true;
     p.fiscal_doc_attached = false;
     let _ = client.issue(&issuer, &p);
+}
+
+#[test]
+fn update_bill_status_success_by_admin_flow() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TradeBillRegistry, ());
+    let client = TradeBillRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_issuer_allowed(&issuer, &true);
+
+    let id = client.issue(&issuer, &sample_payload(&env));
+
+    // Admin transitions: Issued -> Funding -> Funded -> Overdue -> Settled -> PaidOut
+    client.update_bill_status(&admin, &id, &BillStatus::Funding);
+    assert_eq!(client.get_trade_bill(&id).unwrap().status, BillStatus::Funding);
+
+    client.update_bill_status(&admin, &id, &BillStatus::Funded);
+    assert_eq!(client.get_trade_bill(&id).unwrap().status, BillStatus::Funded);
+
+    client.update_bill_status(&admin, &id, &BillStatus::Overdue);
+    assert_eq!(client.get_trade_bill(&id).unwrap().status, BillStatus::Overdue);
+
+    client.update_bill_status(&admin, &id, &BillStatus::Settled);
+    assert_eq!(client.get_trade_bill(&id).unwrap().status, BillStatus::Settled);
+
+    client.update_bill_status(&admin, &id, &BillStatus::PaidOut);
+    assert_eq!(client.get_trade_bill(&id).unwrap().status, BillStatus::PaidOut);
+}
+
+#[test]
+fn update_bill_status_success_by_issuer_cancelled() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TradeBillRegistry, ());
+    let client = TradeBillRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_issuer_allowed(&issuer, &true);
+
+    let id = client.issue(&issuer, &sample_payload(&env));
+
+    // Issuer transitions: Issued -> Cancelled
+    client.update_bill_status(&issuer, &id, &BillStatus::Cancelled);
+    assert_eq!(client.get_trade_bill(&id).unwrap().status, BillStatus::Cancelled);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #3)")]
+fn update_bill_status_fails_if_unauthorized_issuer_funding() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TradeBillRegistry, ());
+    let client = TradeBillRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_issuer_allowed(&issuer, &true);
+
+    let id = client.issue(&issuer, &sample_payload(&env));
+
+    // Issuer cannot transition to Funding (unauthorized)
+    client.update_bill_status(&issuer, &id, &BillStatus::Funding);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #3)")]
+fn update_bill_status_fails_if_unauthorized_third_party() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TradeBillRegistry, ());
+    let client = TradeBillRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+    let random_user = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_issuer_allowed(&issuer, &true);
+
+    let id = client.issue(&issuer, &sample_payload(&env));
+
+    // Random user cannot transition to Cancelled (unauthorized)
+    client.update_bill_status(&random_user, &id, &BillStatus::Cancelled);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #8)")]
+fn update_bill_status_fails_for_non_existent_bill() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TradeBillRegistry, ());
+    let client = TradeBillRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+
+    client.initialize(&admin);
+
+    // Non-existent bill ID 999
+    client.update_bill_status(&admin, &999, &BillStatus::Funding);
+}
+
+#[test]
+#[should_panic(expected = "HostError: Error(Contract, #10)")]
+fn update_bill_status_fails_for_invalid_transition() {
+    let env = Env::default();
+    env.mock_all_auths();
+
+    let contract_id = env.register(TradeBillRegistry, ());
+    let client = TradeBillRegistryClient::new(&env, &contract_id);
+
+    let admin = Address::generate(&env);
+    let issuer = Address::generate(&env);
+
+    client.initialize(&admin);
+    client.set_issuer_allowed(&issuer, &true);
+
+    let id = client.issue(&issuer, &sample_payload(&env));
+
+    // Invalid transition: Issued -> Settled (skips Funding & Funded)
+    client.update_bill_status(&admin, &id, &BillStatus::Settled);
 }

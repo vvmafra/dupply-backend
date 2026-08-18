@@ -36,5 +36,15 @@ export async function executeListReceivables(
     return rows.map(mapReceivableRow);
   }
 
+  if (actor.role === "investor") {
+    // Investors can list only receivables currently open for funding
+    const rows = await db
+      .select()
+      .from(receivables)
+      .where(and(eq(receivables.status, "funding"), isNull(receivables.deletedAt)))
+      .limit(limit);
+    return rows.map(mapReceivableRow);
+  }
+
   throw new ReceivableError(RECEIVABLE_ERROR_CODES.FORBIDDEN);
 }

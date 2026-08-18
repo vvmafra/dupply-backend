@@ -25,6 +25,9 @@ export type ReceivableRow = {
   /** API response: reais with 2 decimal places */
   value: number;
   proposedValue: number | null;
+  targetFunding: number;
+  funded: number;
+  yieldRateAnnual: number;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
