@@ -3,6 +3,9 @@ import { createDb } from "../src/infra/database/index.js";
 import { receivables, investorInvestments, investors } from "../src/infra/database/schema.runtime.js";
 import { eq } from "drizzle-orm";
 import { executeSystemPayerSettlement } from "../src/modules/receivable/application/commands/systemPayerSettlementCommand.js";
+import { executeSubmitReceivable } from "../src/modules/receivable/application/commands/submitReceivableCommand.js";
+import { executeRiskDecision } from "../src/modules/receivable/application/commands/riskDecisionCommand.js";
+import { executeSellerDecision } from "../src/modules/receivable/application/commands/sellerDecisionCommand.js";
 
 async function main() {
   const config = loadConfig();
@@ -29,7 +32,52 @@ async function main() {
 
   console.log("\n=== Avançando Ciclo de Vida ===");
   for (const r of rows) {
-    if (r.status === "completed") {
+    if (r.status === "created") {
+      // Transiciona de created para under_review
+      console.log(`Recebível ${r.id.slice(-6)}: created -> under_review (submetendo para análise)`);
+      try {
+        await executeSubmitReceivable(deps as any, {
+          receivableId: r.id,
+          profileId: r.sellerId,
+          actorRole: "seller",
+        });
+      } catch (err: any) {
+        console.error(`Erro ao submeter recebível ${r.id}:`, err.message);
+      }
+    } else if (r.status === "under_review") {
+      // Transiciona de under_review para offer
+      console.log(`Recebível ${r.id.slice(-6)}: under_review -> offer (criando oferta com 2% de deságio)`);
+      try {
+        const proposed = (Number(r.value) / 100) * 0.98;
+        await executeRiskDecision(deps as any, {
+          receivableId: r.id,
+          actorRole: "risk_analyst",
+          decision: "offer",
+          proposedValue: proposed,
+        });
+      } catch (err: any) {
+        console.error(`Erro ao criar oferta para recebível ${r.id}:`, err.message);
+      }
+    } else if (r.status === "offer") {
+      // Transiciona de offer para confirmed
+      console.log(`Recebível ${r.id.slice(-6)}: offer -> confirmed (cedente aceitando a proposta)`);
+      try {
+        await executeSellerDecision(deps as any, {
+          receivableId: r.id,
+          profileId: r.sellerId,
+          actorRole: "seller",
+          decision: "accept",
+        });
+      } catch (err: any) {
+        console.error(`Erro ao aceitar oferta para recebível ${r.id}:`, err.message);
+      }
+    } else if (r.status === "confirmed") {
+      // Transiciona de confirmed para funding
+      console.log(`Recebível ${r.id.slice(-6)}: confirmed -> funding (aberto para captação)`);
+      await db.update(receivables)
+        .set({ status: "funding", updatedAt: new Date() })
+        .where(eq(receivables.id, r.id));
+    } else if (r.status === "completed") {
       // Transiciona de completed para payer_settled usando a lógica oficial de payout
       console.log(`Recebível ${r.id.slice(-6)}: completed -> payer_settled (executando payout e atualizando saldo do investidor)`);
       await executeSystemPayerSettlement(deps, {
