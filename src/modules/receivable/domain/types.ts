@@ -22,9 +22,12 @@ export type ReceivableRow = {
   sellerId: string;
   payerId: string;
   receivableMetaData: string | null;
+  aiReport: string | null;
+  aiReportPdfUrl: string | null;
   /** API response: reais with 2 decimal places */
   value: number;
   proposedValue: number | null;
+  statusHistory: Record<string, string> | null;
   targetFunding: number;
   funded: number;
   yieldRateAnnual: number;

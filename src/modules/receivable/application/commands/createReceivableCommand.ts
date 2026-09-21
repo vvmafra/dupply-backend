@@ -87,6 +87,7 @@ export async function executeCreateReceivable(
       normalizedBillNumber: materializedKeys.normalizedBillNumber,
       normalizedFiscalDocumentKey: materializedKeys.normalizedFiscalDocumentKey,
       proposedValue: null,
+      statusHistory: JSON.stringify({ [RECEIVABLE_STATUS.CREATED]: now.toISOString() }),
       createdAt: now,
       updatedAt: now,
       deletedAt: null,

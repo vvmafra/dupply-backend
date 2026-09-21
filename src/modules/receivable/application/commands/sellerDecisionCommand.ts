@@ -8,7 +8,7 @@ import {
   RECEIVABLE_STATUS,
   type ReceivableStatus,
 } from "../../domain/transitions.js";
-import { loadReceivableOrThrow } from "../receivableHelpers.js";
+import { loadReceivableOrThrow, appendStatusHistory } from "../receivableHelpers.js";
 
 export type SellerDecisionInput = {
   receivableId: string;
@@ -32,7 +32,11 @@ export async function executeSellerDecision(
 
   await deps.db
     .update(receivables)
-    .set({ status: to, updatedAt: new Date() })
+    .set({
+      status: to,
+      statusHistory: appendStatusHistory(row.statusHistory, to),
+      updatedAt: new Date(),
+    })
     .where(eq(receivables.id, input.receivableId));
 
   if (to === RECEIVABLE_STATUS.CONFIRMED && deps.notifyPayerReceivableConfirmed) {

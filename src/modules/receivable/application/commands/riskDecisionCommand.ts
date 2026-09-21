@@ -8,7 +8,7 @@ import {
   RECEIVABLE_STATUS,
   type ReceivableStatus,
 } from "../../domain/transitions.js";
-import { loadReceivableOrThrow, valueReaisToDbCentsText } from "../receivableHelpers.js";
+import { loadReceivableOrThrow, valueReaisToDbCentsText, appendStatusHistory } from "../receivableHelpers.js";
 
 export type RiskDecisionInput = {
   receivableId: string;
@@ -42,6 +42,7 @@ export async function executeRiskDecision(deps: AppDeps, input: RiskDecisionInpu
         to === RECEIVABLE_STATUS.OFFER
           ? valueReaisToDbCentsText(input.proposedValue)
           : null,
+      statusHistory: appendStatusHistory(row.statusHistory, to),
       updatedAt: new Date(),
     })
     .where(eq(receivables.id, input.receivableId));

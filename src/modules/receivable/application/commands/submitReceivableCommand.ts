@@ -11,7 +11,7 @@ import {
   type ReceivableStatus,
 } from "../../domain/transitions.js";
 import { assertNoActiveReceivableDuplicate } from "../duplicateGuard.js";
-import { loadReceivableOrThrow } from "../receivableHelpers.js";
+import { loadReceivableOrThrow, appendStatusHistory } from "../receivableHelpers.js";
 
 export type SubmitReceivableInput = {
   receivableId: string;
@@ -42,6 +42,10 @@ export async function executeSubmitReceivable(
 
   await deps.db
     .update(receivables)
-    .set({ status: RECEIVABLE_STATUS.UNDER_REVIEW, updatedAt: new Date() })
+    .set({
+      status: RECEIVABLE_STATUS.UNDER_REVIEW,
+      statusHistory: appendStatusHistory(row.statusHistory, RECEIVABLE_STATUS.UNDER_REVIEW),
+      updatedAt: new Date(),
+    })
     .where(eq(receivables.id, input.receivableId));
 }

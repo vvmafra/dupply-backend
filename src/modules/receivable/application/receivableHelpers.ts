@@ -19,6 +19,24 @@ export function valueReaisToDbCentsText(reais?: number): string {
   return String(toCents(reais));
 }
 
+export function appendStatusHistory(
+  currentHistoryJson: string | null,
+  newStatus: string
+): string {
+  let history: Record<string, string> = {};
+  if (currentHistoryJson) {
+    try {
+      history = JSON.parse(currentHistoryJson);
+    } catch {
+      // ignore
+    }
+  }
+  if (!history[newStatus]) {
+    history[newStatus] = new Date().toISOString();
+  }
+  return JSON.stringify(history);
+}
+
 export function valueDbCentsTextToReais(centsText: string): number {
   const cents = Number.parseInt(centsText, 10);
   if (Number.isNaN(cents)) return 0;
@@ -69,9 +87,12 @@ export function mapReceivableRow(row: ReceivableDbRow): ReceivableRow {
     sellerId: row.sellerId,
     payerId: row.payerId,
     receivableMetaData: mapReceivableMetaDataForApi(row.receivableMetaData),
+    aiReport: row.aiReport,
+    aiReportPdfUrl: row.aiReportPdfUrl,
     value: valueDbCentsTextToReais(row.value),
     proposedValue:
       row.proposedValue == null ? null : valueDbCentsTextToReais(row.proposedValue),
+    statusHistory: row.statusHistory ? JSON.parse(row.statusHistory) : null,
     targetFunding: toReais(row.targetFundingCents),
     funded: toReais(row.fundedCents),
     yieldRateAnnual: row.yieldRateAnnual,

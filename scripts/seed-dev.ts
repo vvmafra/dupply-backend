@@ -137,6 +137,47 @@ async function main(): Promise<void> {
     }
   }
 
+  // 2b. Seed Analyst & Admin
+  const analystEmail = "analyst@dupply.dev.local";
+  const [existingAnalyst] = await db
+    .select()
+    .from(accounts)
+    .where(eq(accounts.email, analystEmail))
+    .limit(1);
+
+  if (!existingAnalyst) {
+    await db.insert(accounts).values({
+      id: createId(),
+      email: analystEmail,
+      passwordHash,
+      role: "risk_analyst",
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    console.log(`created account: ${analystEmail} (role=risk_analyst)`);
+  }
+
+  const adminEmail = "admin@dupply.dev.local";
+  const [existingAdmin] = await db
+    .select()
+    .from(accounts)
+    .where(eq(accounts.email, adminEmail))
+    .limit(1);
+
+  if (!existingAdmin) {
+    await db.insert(accounts).values({
+      id: createId(),
+      email: adminEmail,
+      passwordHash,
+      role: "admin",
+      status: "active",
+      createdAt: now,
+      updatedAt: now,
+    });
+    console.log(`created account: ${adminEmail} (role=admin)`);
+  }
+
   // 3. Seed some Receivables in funding status so the investor has opportunities
   const [sellerRow] = await db
     .select()

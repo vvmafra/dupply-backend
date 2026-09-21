@@ -211,7 +211,7 @@ export async function registerSellerRoutes(
   api.patch(
     "/v1/sellers/:id/status",
     {
-      preHandler: requireRoles("admin"),
+      preHandler: requireRoles("admin", "risk_analyst"),
       schema: {
         tags: ["Sellers"],
         summary: "Transicionar status do seller (admin)",

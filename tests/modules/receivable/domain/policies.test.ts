@@ -12,28 +12,28 @@ import { RECEIVABLE_STATUS } from "../../../../src/modules/receivable/domain/tra
 
 test("seller views own receivable", () => {
   assert.equal(
-    assertCanViewReceivable({ profileId: "seller-1", role: "seller" }, { sellerId: "seller-1" }),
+    assertCanViewReceivable({ profileId: "seller-1", role: "seller" }, { sellerId: "seller-1", status: "created" }),
     true,
   );
 });
 
 test("seller cannot view other's receivable", () => {
   assert.equal(
-    assertCanViewReceivable({ profileId: "seller-1", role: "seller" }, { sellerId: "seller-2" }),
+    assertCanViewReceivable({ profileId: "seller-1", role: "seller" }, { sellerId: "seller-2", status: "created" }),
     false,
   );
 });
 
 test("payer cannot view receivable via GET policy", () => {
   assert.equal(
-    assertCanViewReceivable({ profileId: "payer-1", role: "payer" }, { sellerId: "seller-1" }),
+    assertCanViewReceivable({ profileId: "payer-1", role: "payer" }, { sellerId: "seller-1", status: "created" }),
     false,
   );
 });
 
 test("admin can view any receivable", () => {
   assert.equal(
-    assertCanViewReceivable({ profileId: "admin-1", role: "admin" }, { sellerId: "seller-1" }),
+    assertCanViewReceivable({ profileId: "admin-1", role: "admin" }, { sellerId: "seller-1", status: "created" }),
     true,
   );
 });

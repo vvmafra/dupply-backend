@@ -91,6 +91,10 @@ export async function executeCreateAndSubmitReceivable(
       normalizedBillNumber: materializedKeys.normalizedBillNumber,
       normalizedFiscalDocumentKey: materializedKeys.normalizedFiscalDocumentKey,
       proposedValue: null,
+      statusHistory: JSON.stringify({
+        [RECEIVABLE_STATUS.CREATED]: now.toISOString(),
+        [RECEIVABLE_STATUS.UNDER_REVIEW]: now.toISOString(),
+      }),
       createdAt: now,
       updatedAt: now,
       deletedAt: null,

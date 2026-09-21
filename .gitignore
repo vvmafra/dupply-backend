@@ -7,3 +7,4 @@ data/
 *.log
 *.db
 .DS_Store
+scratch/
