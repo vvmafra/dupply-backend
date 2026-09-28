@@ -24,8 +24,8 @@ session and after every commit. Plan and rationale: `2026-09-27_demo-week-plan.m
 | # | Gap | Repo | Status | Commit | Evidence |
 |---|-----|------|--------|--------|----------|
 | 0 | Offers not showing for investor / admin | backend + frontend | todo | | |
-| 1 | Open funding: admin route + admin button | backend + frontend | todo | | |
-| 3 | Pay seller / payer settles as admin actions + "advance stage" button | backend + frontend | todo | | |
+| 1 | Open funding: admin route + admin button | backend + frontend | backend done, frontend todo | backend `6b0a4a3` | session log 2026-09-28 (cloud) |
+| 3 | Pay seller / payer settles as admin actions + "advance stage" button | backend + frontend | backend done, frontend todo | backend `a2b23fd` | session log 2026-09-28 (cloud) |
 | 2 | Postgres parity smoke (founder, local Postgres) | backend | todo | | |
 | 5 | Demo seed: `aiReport`, seller `in_review`, one receivable per stage, investor balance | backend | todo | | |
 | 4 | One-command reset + seed, Supabase only with explicit flag | backend | todo | | |
@@ -95,6 +95,50 @@ Frontend (`dupply-frontend/src`):
 - Mapped the code paths listed above. No gap fixed yet.
 - Next: cloud session picks up gaps 0 → 1 → 3 on `feat/demo-local`, one commit each, and
   appends to this log.
+
+### 2026-09-28 (cloud session, backend gaps 1 and 3)
+
+Branch `feat/demo-local`, two commits, one per gap. Gap 0 was not touched in this session (it
+was scoped to gaps 1 and 3 only); the backend half of gap 0 now depends only on seeding, since
+the smoke below shows `GET /v1/receivables` as investor lists a receivable once it is in
+`funding` with a real target.
+
+- **Gap 1** (`6b0a4a3`): `POST /v1/admin/receivables/:id/open-funding`, JWT +
+  `requireRoles("admin")`, no body. `adminOpenFundingCommand.ts` asserts `confirmed → funding`
+  with the system actor, sets `targetFundingCents` from `proposedValue` (fallback `value`) when
+  it is 0, keeps `fundedCents`, appends `statusHistory`. Returns `{ from, to, targetFunding }`
+  (reais). 409 on wrong status, 404 unknown id, 403 non-admin.
+- **Gap 3** (`a2b23fd`): `POST /v1/admin/receivables/:id/advance-stage`, same auth, no body.
+  `adminAdvanceStageCommand.ts` maps `funded → processing`, `processing → completed`,
+  `completed → payer_settled`, delegating to `executeSystemAdvanceSettlement` /
+  `executeSystemPayerSettlement` so the pro-rata payout runs. Returns `{ from, to }`; any other
+  status (including `confirmed`, `funding`, `overdue`, terminal) → 409
+  `invalid_admin_stage_advance`. Internal API-key routes untouched.
+- Routes live in `src/modules/receivable/api/receivable-admin.ts`, registered from
+  `registerReceivableModule.ts` inside the JWT scope. Rule `module-receivables.mdc` routes
+  table updated.
+- Tests: `tests/modules/receivable/application/adminOpenFundingCommand.test.ts`,
+  `adminAdvanceStageCommand.test.ts`, `tests/routes/v1/receivable-admin.test.ts`.
+  `npm test`: 327 pass, 0 fail. `npm run lint` clean.
+- Evidence (real server, SQLite in the scratchpad, `seed-dev` accounts, curl): seller submit →
+  analyst offer 900 → seller accept → `advance-stage` on `confirmed` = 409 → seller
+  `open-funding` = 403 → admin `open-funding` = 200 `{"from":"confirmed","to":"funding",
+  "targetFunding":900}` → investor `GET /v1/receivables` lists it → investor invests 900 →
+  `funded` → `advance-stage` ×3 = 200 `funded→processing`, `processing→completed`,
+  `completed→payer_settled` → investment `settled`, investor balance back to 1,000,000 →
+  fourth `advance-stage` = 409.
+- Findings for later gaps:
+  - `scripts/seed-dev.ts` does not run migrations; on an empty SQLite file it fails with
+    `no such table: accounts`. Start the server once first (it migrates), then seed. Relevant
+    for gap 4 (one-command reset + seed).
+  - Receivables created through the normal flow have `yieldRateAnnual = 0`, so the payout
+    returns principal only. `open-funding` does not set a yield. For the demo either the seed
+    sets `yieldRateAnnual` (gap 5) or open-funding grows a `yieldRateAnnual` body field.
+  - Fastify returns 400 `FST_ERR_CTP_EMPTY_JSON_BODY` if the client sends
+    `content-type: application/json` with an empty body on the no-body admin routes (same as
+    the existing `/submit`). Frontend: call them without a JSON content-type, or send `{}`.
+- Next: frontend buttons for gaps 1 and 3 (`dupply-frontend`), then gap 0 seed + admin
+  service wiring, then gap 2 on the founder's Postgres.
 
 ## Open questions for the founder
 
