@@ -5,6 +5,18 @@ Stack: Node 20, TypeScript ESM, Fastify 5, Drizzle ORM, SQLite (dev) / PostgreSQ
 
 ---
 
+## Demo week (until 2026-10-02) — read this first
+
+Investor demo on Friday 2026-10-02. Until then, `docs/notes/2026-09-28_demo-tracking.md` is the
+single source of truth for both repos and **overrides the PRD → TechSpec → Tasks pipeline below**:
+no PRDs, no `tasks/` files for demo gaps. Work the gap board in order, one small commit per gap
+per repo, evidence via real command output, and append a session-log entry to the tracking note
+at the end of every session. Out of scope until the demo: architecture rewrite, Nest migration,
+multi-chain abstraction, offer as its own entity, SQLite → Postgres in dev. Cloud sessions use
+SQLite; never touch Render, Vercel or Supabase from an agent session.
+
+---
+
 ## Development workflow
 
 Every feature follows this pipeline. Each step has a dedicated skill:
