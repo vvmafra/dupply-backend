@@ -137,6 +137,13 @@ the smoke below shows `GET /v1/receivables` as investor lists a receivable once 
   - Fastify returns 400 `FST_ERR_CTP_EMPTY_JSON_BODY` if the client sends
     `content-type: application/json` with an empty body on the no-body admin routes (same as
     the existing `/submit`). Frontend: call them without a JSON content-type, or send `{}`.
+- Smoke script committed as `scripts/smoke-admin-lifecycle.sh` (unique bill number per run).
+  Gap 2 on the founder's Postgres = start the API on `DATABASE_URL=postgres://...`, run
+  `npm run seed:dev`, then `BASE=http://localhost:8081 bash scripts/smoke-admin-lifecycle.sh`
+  and compare with the SQLite output above.
+- Push from this cloud session was refused by the git proxy (`vvmafra/dupply-backend is not in
+  this session's authorized repository set`). Commits exported to `docs/notes/patches/`
+  (bundle + patches) as a fallback.
 - Next: frontend buttons for gaps 1 and 3 (`dupply-frontend`), then gap 0 seed + admin
   service wiring, then gap 2 on the founder's Postgres.
 
