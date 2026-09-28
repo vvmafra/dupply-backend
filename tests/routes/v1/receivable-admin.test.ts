@@ -152,6 +152,93 @@ test("POST /v1/admin/receivables/:id/open-funding as admin moves confirmed → f
   }
 });
 
+test("POST /v1/admin/receivables/:id/advance-stage with seller token returns 403", async () => {
+  const ctx = await createAdminApp();
+  try {
+    const { sellerId } = await setupActiveSeller(ctx.deps);
+    const id = await confirmedReceivable(ctx.deps, sellerId);
+    await ctx.deps.db.update(receivables).set({ status: "funded" }).where(eq(receivables.id, id));
+    const token = await tokenFor(ctx, "seller");
+
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: `/v1/admin/receivables/${id}/advance-stage`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(res.statusCode, 403);
+
+    const [row] = await ctx.deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.status, "funded");
+  } finally {
+    await ctx.app.close();
+    await ctx.handle.close();
+  }
+});
+
+test("POST /v1/admin/receivables/:id/advance-stage as admin walks funded → payer_settled", async () => {
+  const ctx = await createAdminApp();
+  try {
+    const { sellerId } = await setupActiveSeller(ctx.deps);
+    const id = await confirmedReceivable(ctx.deps, sellerId);
+    const token = await tokenFor(ctx, "admin");
+
+    // confirmed is not advanceable by this route → 409
+    let res = await ctx.app.inject({
+      method: "POST",
+      url: `/v1/admin/receivables/${id}/advance-stage`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(res.statusCode, 409);
+    assert.deepEqual(res.json(), { error: "invalid_admin_stage_advance" });
+
+    await ctx.deps.db.update(receivables).set({ status: "funded" }).where(eq(receivables.id, id));
+
+    const expected: Array<[string, string]> = [
+      ["funded", "processing"],
+      ["processing", "completed"],
+      ["completed", "payer_settled"],
+    ];
+    for (const [from, to] of expected) {
+      res = await ctx.app.inject({
+        method: "POST",
+        url: `/v1/admin/receivables/${id}/advance-stage`,
+        headers: { authorization: `Bearer ${token}` },
+      });
+      assert.equal(res.statusCode, 200, `${from} → ${to}: ${res.body}`);
+      assert.deepEqual(res.json(), { from, to });
+    }
+
+    const [row] = await ctx.deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.status, "payer_settled");
+
+    res = await ctx.app.inject({
+      method: "POST",
+      url: `/v1/admin/receivables/${id}/advance-stage`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(res.statusCode, 409);
+  } finally {
+    await ctx.app.close();
+    await ctx.handle.close();
+  }
+});
+
+test("POST /v1/admin/receivables/:id/advance-stage unknown id returns 404", async () => {
+  const ctx = await createAdminApp();
+  try {
+    const token = await tokenFor(ctx, "admin");
+    const res = await ctx.app.inject({
+      method: "POST",
+      url: "/v1/admin/receivables/missing/advance-stage",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(res.statusCode, 404);
+  } finally {
+    await ctx.app.close();
+    await ctx.handle.close();
+  }
+});
+
 test("POST /v1/admin/receivables/:id/open-funding unknown id returns 404", async () => {
   const ctx = await createAdminApp();
   try {
