@@ -194,15 +194,25 @@ ETHERFUSE_API_KEY=ef_test_key_sample
 
 ### 4. Inicialização do Banco de Dados & Seeding
 
-Para criar a estrutura de tabelas e popular o banco local com dados completos de demonstração (incluindo usuários cedentes, analistas, duplicatas e relatórios da WAK Comercio Exterior):
+Para criar a estrutura de tabelas e popular o banco local com o cenário de demonstração:
 
 ```bash
-# Executar as migrações no banco de dados local
+# Executar as migrações no banco de dados local (Postgres). No SQLite o seed já migra sozinho.
 npm run db:push
 
-# Popular o banco com dados de teste
+# Popular o banco com o cenário de demo (idempotente: re-executar reseta os dados de demo)
 npm run seed:dev
 ```
+
+O seed (`scripts/seed-dev.ts` + `scripts/seed/demo-fixtures.ts`) cria, com senha `dev-password-change-me`:
+
+| Conta | Perfil | Estado |
+|---|---|---|
+| `seller@dupply.dev.local` | seller | ativo, dono de uma duplicata por estágio (`created` … `payer_settled`, `overdue`, `reproved`), todas com `aiReport` após a análise |
+| `seller.review@dupply.dev.local` | seller | `in_review`, cadastro completo aguardando aprovação do admin |
+| `investor@dupply.dev.local` | investor | R$ 1.000.000,00 disponíveis + 5 aportes ativos e 1 liquidado |
+| `analyst@dupply.dev.local` | risk_analyst | — |
+| `admin@dupply.dev.local` | admin | — |
 
 ### 5. Executando a Aplicação
 
