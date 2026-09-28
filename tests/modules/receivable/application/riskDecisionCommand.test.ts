@@ -96,3 +96,89 @@ test("reprove with proposedValue throws", async () => {
     await handle.close();
   }
 });
+
+test("risk offer stores yieldRateMonthly and minInvestment (cents) with the proposal", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    const id = await submitDraft(deps, sellerId);
+    await executeRiskDecision(deps, {
+      receivableId: id,
+      actorRole: "risk_analyst",
+      decision: "offer",
+      proposedValue: 450,
+      yieldRateMonthly: 0.018,
+      minInvestment: 50,
+    });
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.status, RECEIVABLE_STATUS.OFFER);
+    assert.equal(row?.yieldRateMonthly, 0.018);
+    assert.equal(row?.minInvestmentCents, 5000);
+  } finally {
+    await handle.close();
+  }
+});
+
+test("risk offer without terms leaves them at 0", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    const id = await submitDraft(deps, sellerId);
+    await executeRiskDecision(deps, {
+      receivableId: id,
+      actorRole: "risk_analyst",
+      decision: "offer",
+      proposedValue: 450,
+    });
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.yieldRateMonthly, 0);
+    assert.equal(row?.minInvestmentCents, 0);
+  } finally {
+    await handle.close();
+  }
+});
+
+test("risk offer with minInvestment above proposedValue throws invalid_offer_terms", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    const id = await submitDraft(deps, sellerId);
+    await assert.rejects(
+      () =>
+        executeRiskDecision(deps, {
+          receivableId: id,
+          actorRole: "risk_analyst",
+          decision: "offer",
+          proposedValue: 450,
+          minInvestment: 450.01,
+        }),
+      (e: unknown) =>
+        e instanceof ReceivableError && e.code === RECEIVABLE_ERROR_CODES.INVALID_OFFER_TERMS,
+    );
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.status, RECEIVABLE_STATUS.UNDER_REVIEW);
+  } finally {
+    await handle.close();
+  }
+});
+
+test("reprove with offer terms throws offer_terms_not_allowed_for_reprove", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    const id = await submitDraft(deps, sellerId);
+    await assert.rejects(
+      () =>
+        executeRiskDecision(deps, {
+          receivableId: id,
+          actorRole: "risk_analyst",
+          decision: "reprove",
+          yieldRateMonthly: 0.01,
+        }),
+      (e: unknown) =>
+        e instanceof ReceivableError && e.code === RECEIVABLE_ERROR_CODES.OFFER_TERMS_FORBIDDEN,
+    );
+  } finally {
+    await handle.close();
+  }
+});

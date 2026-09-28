@@ -16,7 +16,8 @@ export type InvestmentItem = {
     status: string;
     targetFunding: number;
     funded: number;
-    yieldRateAnnual: number;
+    /** Simple monthly rate as a fraction (0.018 = 1.8% a.m.). */
+    yieldRateMonthly: number;
   };
 };
 
@@ -45,7 +46,7 @@ export async function executeListInvestments(
       receivableStatus: receivables.status as any,
       receivableTargetFundingCents: receivables.targetFundingCents as any,
       receivableFundedCents: receivables.fundedCents as any,
-      receivableYieldRateAnnual: receivables.yieldRateAnnual as any,
+      receivableYieldRateMonthly: receivables.yieldRateMonthly as any,
     })
     .from(investorInvestments)
     .innerJoin(receivables, eq(investorInvestments.receivableId, receivables.id))
@@ -63,7 +64,7 @@ export async function executeListInvestments(
       status: row.receivableStatus,
       targetFunding: toReais(row.receivableTargetFundingCents),
       funded: toReais(row.receivableFundedCents),
-      yieldRateAnnual: row.receivableYieldRateAnnual,
+      yieldRateMonthly: row.receivableYieldRateMonthly,
     },
   }));
 }

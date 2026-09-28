@@ -133,7 +133,13 @@ test("POST /v1/admin/receivables/:id/open-funding as admin moves confirmed → f
       headers: { authorization: `Bearer ${token}` },
     });
     assert.equal(res.statusCode, 200);
-    assert.deepEqual(res.json(), { from: "confirmed", to: "funding", targetFunding: 450 });
+    assert.deepEqual(res.json(), {
+      from: "confirmed",
+      to: "funding",
+      targetFunding: 450,
+      yieldRateMonthly: 0,
+      minInvestment: 0,
+    });
 
     const [row] = await ctx.deps.db.select().from(receivables).where(eq(receivables.id, id));
     assert.equal(row?.status, "funding");
@@ -233,6 +239,50 @@ test("POST /v1/admin/receivables/:id/advance-stage unknown id returns 404", asyn
       headers: { authorization: `Bearer ${token}` },
     });
     assert.equal(res.statusCode, 404);
+  } finally {
+    await ctx.app.close();
+    await ctx.handle.close();
+  }
+});
+
+test("POST /v1/admin/receivables/:id/open-funding accepts term overrides and rejects bad ones", async () => {
+  const ctx = await createAdminApp();
+  try {
+    const { sellerId } = await setupActiveSeller(ctx.deps);
+    const id = await confirmedReceivable(ctx.deps, sellerId);
+    const token = await tokenFor(ctx, "admin");
+
+    let res = await ctx.app.inject({
+      method: "POST",
+      url: `/v1/admin/receivables/${id}/open-funding`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { yieldRateMonthly: 0.018, minInvestment: 450.01 },
+    });
+    assert.equal(res.statusCode, 400, res.body);
+    assert.deepEqual(res.json(), { error: "invalid_offer_terms" });
+
+    res = await ctx.app.inject({
+      method: "POST",
+      url: `/v1/admin/receivables/${id}/open-funding`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { yieldRateMonthly: 0.5 },
+    });
+    assert.equal(res.statusCode, 400, "zod rejects a rate above the cap");
+
+    res = await ctx.app.inject({
+      method: "POST",
+      url: `/v1/admin/receivables/${id}/open-funding`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { yieldRateMonthly: 0.018, minInvestment: 100 },
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.deepEqual(res.json(), {
+      from: "confirmed",
+      to: "funding",
+      targetFunding: 450,
+      yieldRateMonthly: 0.018,
+      minInvestment: 100,
+    });
   } finally {
     await ctx.app.close();
     await ctx.handle.close();

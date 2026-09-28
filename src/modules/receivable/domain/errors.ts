@@ -7,6 +7,8 @@ export const RECEIVABLE_ERROR_CODES = {
   SELLER_PAYER_MUST_DIFFER: "seller_and_payer_must_differ",
   PROPOSED_VALUE_REQUIRED: "proposed_value_required_for_offer",
   PROPOSED_VALUE_FORBIDDEN: "proposed_value_not_allowed_for_reprove",
+  OFFER_TERMS_FORBIDDEN: "offer_terms_not_allowed_for_reprove",
+  INVALID_OFFER_TERMS: "invalid_offer_terms",
   SOFT_DELETED: "receivable_deleted",
   DUPLICATE_BILL_NUMBER: "duplicate_bill_number",
   DUPLICATE_FISCAL_KEY: "duplicate_fiscal_document_key",

@@ -276,6 +276,7 @@ async function insertTestReceivable(
   overrides: {
     targetFundingCents?: number;
     fundedCents?: number;
+    minInvestmentCents?: number;
     status?: string;
   } = {},
 ): Promise<string> {
@@ -300,7 +301,8 @@ async function insertTestReceivable(
     value: "1000.00",
     targetFundingCents: overrides.targetFundingCents ?? 100000,
     fundedCents: overrides.fundedCents ?? 0,
-    yieldRateAnnual: 0.15,
+    yieldRateMonthly: 0.015,
+    minInvestmentCents: overrides.minInvestmentCents ?? 0,
     createdAt: now,
     updatedAt: now,
   });
@@ -501,7 +503,44 @@ test("Investor routes - invest failure cases", async () => {
     assert.equal(failStatusRes.statusCode, 400);
     assert.equal((failStatusRes.json() as any).error, "receivable_not_open_for_funding");
 
-    // 4. Receivable not found
+    // 4. Below the minimum ticket (R$ 200,00), unless it closes the remainder
+    const minTicketReceivableId = await insertTestReceivable(deps, sellerId, {
+      targetFundingCents: 30000,
+      minInvestmentCents: 20000,
+      status: "funding",
+    });
+    const failMinRes = await app.inject({
+      method: "POST",
+      url: "/v1/investors/invest",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { receivableId: minTicketReceivableId, amount: 100.0, idempotencyKey: "min-1" },
+    });
+    assert.equal(failMinRes.statusCode, 400);
+    assert.equal((failMinRes.json() as any).error, "investment_below_minimum");
+
+    const okMinRes = await app.inject({
+      method: "POST",
+      url: "/v1/investors/invest",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { receivableId: minTicketReceivableId, amount: 200.0, idempotencyKey: "min-2" },
+    });
+    assert.equal(okMinRes.statusCode, 201, okMinRes.body);
+
+    // remainder is R$ 100,00 < ticket: closing it is allowed
+    const closeRemainderRes = await app.inject({
+      method: "POST",
+      url: "/v1/investors/invest",
+      headers: { authorization: `Bearer ${token}` },
+      payload: { receivableId: minTicketReceivableId, amount: 100.0, idempotencyKey: "min-3" },
+    });
+    assert.equal(closeRemainderRes.statusCode, 201, closeRemainderRes.body);
+    const [fundedRow] = await deps.db
+      .select()
+      .from(receivables)
+      .where(eq(receivables.id, minTicketReceivableId));
+    assert.equal(fundedRow?.status, "funded");
+
+    // 5. Receivable not found
     const failNotFoundRes = await app.inject({
       method: "POST",
       url: "/v1/investors/invest",

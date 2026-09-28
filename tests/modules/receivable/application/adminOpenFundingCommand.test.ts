@@ -62,6 +62,8 @@ test("admin open funding: confirmed → funding, target from proposedValue", asy
       from: RECEIVABLE_STATUS.CONFIRMED,
       to: RECEIVABLE_STATUS.FUNDING,
       targetFundingCents: 45000,
+      yieldRateMonthly: 0,
+      minInvestmentCents: 0,
     });
 
     const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
@@ -136,6 +138,46 @@ test("admin open funding: unknown receivable → not_found", async () => {
       (e: unknown) =>
         e instanceof ReceivableError && e.code === RECEIVABLE_ERROR_CODES.NOT_FOUND,
     );
+  } finally {
+    await handle.close();
+  }
+});
+
+test("admin open funding: keeps analyst terms and allows overriding them", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    const id = await confirmedReceivable(deps, sellerId, 450);
+    await deps.db
+      .update(receivables)
+      .set({ yieldRateMonthly: 0.015, minInvestmentCents: 5000 })
+      .where(eq(receivables.id, id));
+
+    const result = await executeAdminOpenFunding(deps, { receivableId: id, minInvestment: 100 });
+    assert.equal(result.yieldRateMonthly, 0.015, "analyst rate kept");
+    assert.equal(result.minInvestmentCents, 10000, "ticket overridden");
+
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.yieldRateMonthly, 0.015);
+    assert.equal(row?.minInvestmentCents, 10000);
+  } finally {
+    await handle.close();
+  }
+});
+
+test("admin open funding: minInvestment above the target is rejected and nothing changes", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    const id = await confirmedReceivable(deps, sellerId, 450);
+
+    await assert.rejects(
+      executeAdminOpenFunding(deps, { receivableId: id, minInvestment: 450.01 }),
+      (e: unknown) =>
+        e instanceof ReceivableError && e.code === RECEIVABLE_ERROR_CODES.INVALID_OFFER_TERMS,
+    );
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.status, RECEIVABLE_STATUS.CONFIRMED);
   } finally {
     await handle.close();
   }

@@ -17,6 +17,7 @@ import {
   ReceivableError,
   type ReceivableErrorCode,
 } from "../domain/errors.js";
+import { MAX_YIELD_RATE_MONTHLY } from "../domain/offerTerms.js";
 import { ReceivableTransitionError } from "../domain/transitions.js";
 import { SELLER_ERROR_CODES, SellerError } from "../../seller/domain/errors.js";
 import { requireRoles } from "../../../plugins/require-roles.js";
@@ -53,9 +54,16 @@ const updateBodySchema = z.object({
   receivableMetaData: receivableMetaDataSchema,
 });
 
+/** Offer terms: rate as a fraction (0.018 = 1.8% a.m.), minimum ticket in reais. */
+const offerTermsSchema = {
+  yieldRateMonthly: z.number().min(0).max(MAX_YIELD_RATE_MONTHLY).optional(),
+  minInvestment: z.number().positive().multipleOf(0.01).optional(),
+};
+
 const riskDecisionBodySchema = z.object({
   decision: z.enum(["offer", "reprove"]),
   proposedValue: z.number().positive().multipleOf(0.01).optional(),
+  ...offerTermsSchema,
 });
 
 const sellerDecisionBodySchema = z.object({
@@ -72,6 +80,8 @@ const RECEIVABLE_ERROR_HTTP: Partial<Record<ReceivableErrorCode, number>> = {
   [RECEIVABLE_ERROR_CODES.SELLER_PAYER_MUST_DIFFER]: 400,
   [RECEIVABLE_ERROR_CODES.PROPOSED_VALUE_REQUIRED]: 400,
   [RECEIVABLE_ERROR_CODES.PROPOSED_VALUE_FORBIDDEN]: 400,
+  [RECEIVABLE_ERROR_CODES.OFFER_TERMS_FORBIDDEN]: 400,
+  [RECEIVABLE_ERROR_CODES.INVALID_OFFER_TERMS]: 400,
   [RECEIVABLE_ERROR_CODES.METADATA_LOCKED]: 409,
   [RECEIVABLE_ERROR_CODES.SOFT_DELETED]: 409,
   [RECEIVABLE_ERROR_CODES.DUPLICATE_BILL_NUMBER]: 409,
@@ -284,6 +294,8 @@ export async function registerReceivableRoutes(
           actorRole: request.auth!.role,
           decision: request.body.decision,
           proposedValue: request.body.proposedValue,
+          yieldRateMonthly: request.body.yieldRateMonthly,
+          minInvestment: request.body.minInvestment,
         });
         return { ok: true };
       } catch (e) {

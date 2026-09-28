@@ -172,7 +172,10 @@ export const receivables = sqliteTable(
     statusHistory: text("status_history"),
     fundedCents: integer("funded_cents").notNull().default(0),
     targetFundingCents: integer("target_funding_cents").notNull().default(0),
-    yieldRateAnnual: real("yield_rate_annual").notNull().default(0),
+    /** Simple monthly interest rate paid to investors, as a fraction (0.018 = 1.8% a.m.). */
+    yieldRateMonthly: real("yield_rate_monthly").notNull().default(0),
+    /** Minimum ticket per investment in cents; 0 = no minimum. */
+    minInvestmentCents: integer("min_investment_cents").notNull().default(0),
     createdAt: integer("created_at", { mode: "timestamp" }).notNull().defaultNow(),
     updatedAt: integer("updated_at", { mode: "timestamp" }).notNull().defaultNow(),
     deletedAt: integer("deleted_at", { mode: "timestamp" }),

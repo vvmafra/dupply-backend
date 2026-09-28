@@ -7,6 +7,7 @@ export const INVESTOR_ERROR_CODES = {
   RECEIVABLE_NOT_FOUND: "receivable_not_found",
   RECEIVABLE_NOT_OPEN_FOR_FUNDING: "receivable_not_open_for_funding",
   INVESTMENT_EXCEEDS_REMAINING_FUNDING: "investment_exceeds_remaining_funding",
+  INVESTMENT_BELOW_MINIMUM: "investment_below_minimum",
   INVEST_IDEMPOTENCY_CONFLICT: "invest_idempotency_conflict",
 } as const;
 

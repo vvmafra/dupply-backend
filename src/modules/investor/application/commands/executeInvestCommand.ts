@@ -71,6 +71,15 @@ export async function executeInvest(
     throw new InvestorError(INVESTOR_ERROR_CODES.INVESTMENT_EXCEEDS_REMAINING_FUNDING);
   }
 
+  // 5b. Enforce the minimum ticket, except when closing a remainder smaller than it
+  if (
+    receivable.minInvestmentCents > 0 &&
+    amountCents < receivable.minInvestmentCents &&
+    amountCents !== remainingCents
+  ) {
+    throw new InvestorError(INVESTOR_ERROR_CODES.INVESTMENT_BELOW_MINIMUM);
+  }
+
   // 6. Check for existing investment with same idempotency key
   const [existing] = await deps.db
     .select()

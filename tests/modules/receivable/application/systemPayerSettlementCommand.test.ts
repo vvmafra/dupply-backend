@@ -78,7 +78,7 @@ test("completed + overdue → overdue, then overdue + settled → payer_settled"
   }
 });
 
-test("payer settlement payout - calculates yield pro-rata 365, credits investor balances, marks active investments settled", async () => {
+test("payer settlement payout - simple monthly interest pro-rata 30 days, credits investor balances, marks active investments settled", async () => {
   const { deps, handle } = await createTestContext();
   try {
     const { sellerId } = await setupActiveSeller(deps);
@@ -87,13 +87,13 @@ test("payer settlement payout - calculates yield pro-rata 365, credits investor 
     // Proposed value: R$ 500,00 (value = 500)
     const receivableId = await createDraftReceivable(deps, sellerId, { value: 500 });
     
-    // Set status to funding, targetFundingCents to 40000 (R$ 400,00), and yieldRateAnnual to 10%
+    // Set status to funding, targetFundingCents to 40000 (R$ 400,00), and yieldRateMonthly to 1% a.m.
     await deps.db
       .update(receivables)
       .set({
         status: RECEIVABLE_STATUS.FUNDING,
         targetFundingCents: 40000,
-        yieldRateAnnual: 0.1,
+        yieldRateMonthly: 0.01,
         updatedAt: new Date(),
       })
       .where(eq(receivables.id, receivableId));
@@ -166,20 +166,18 @@ test("payer settlement payout - calculates yield pro-rata 365, credits investor 
     assert.equal(investments.length, 2);
     assert.ok(investments.every((i) => i.status === "settled"));
 
-    // 9. Verify investor balances include pro-rata yield over 15 days
-    // Principal A = 25000 cents
-    // Yield rate = 10%
-    // Days = 15
-    // Interest A = Math.round(25000 * (0.10 / 365) * 15) = Math.round(102.7397) = 103 cents
-    // Final balance A = (50000 - 25000) + 25000 + 103 = 50103 cents
+    // 9. Verify investor balances include simple interest pro-rata over 15 days (30-day month)
+    // Principal A = 25000 cents, rate = 1% a.m., days = 15
+    // Interest A = Math.round(25000 * (0.01 / 30) * 15) = 125 cents
+    // Final balance A = (50000 - 25000) + 25000 + 125 = 50125 cents
     const [invARow] = await deps.db.select().from(investors).where(eq(investors.id, invA.investorId));
-    assert.equal(invARow.balanceCents, 50103);
+    assert.equal(invARow.balanceCents, 50125);
 
     // Principal B = 15000 cents
-    // Interest B = Math.round(15000 * (0.10 / 365) * 15) = Math.round(61.6438) = 62 cents
-    // Final balance B = (30000 - 15000) + 15000 + 62 = 30062 cents
+    // Interest B = Math.round(15000 * (0.01 / 30) * 15) = 75 cents
+    // Final balance B = (30000 - 15000) + 15000 + 75 = 30075 cents
     const [invBRow] = await deps.db.select().from(investors).where(eq(investors.id, invB.investorId));
-    assert.equal(invBRow.balanceCents, 30062);
+    assert.equal(invBRow.balanceCents, 30075);
   } finally {
     await handle.close();
   }

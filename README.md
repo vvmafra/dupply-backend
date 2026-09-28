@@ -262,12 +262,20 @@ Todos os endpoints utilizam formato JSON. Rotas protegidas exigem o cabeçalho `
   - **Corpo**:
     ```json
     {
-      "decision": "approve",
-      "taxaMensal": 2.5,
-      "prazoDias": 30
+      "decision": "offer",
+      "proposedValue": 900.00,
+      "yieldRateMonthly": 0.018,
+      "minInvestment": 100.00
     }
     ```
-  - **Descrição**: Define o parecer do analista, aprova/reprova o título e gera a proposta líquida de antecipação.
+  - **Descrição**: Define o parecer do analista (`offer` | `reprove`). Em `offer`, `proposedValue` (reais) é obrigatório; `yieldRateMonthly` (fração, `0.018` = 1,8% a.m., juros simples base 30 dias) e `minInvestment` (reais, ticket mínimo por aporte) são opcionais e podem ser sobrescritos pelo admin no `open-funding`.
+- **`POST /v1/admin/receivables/:id/open-funding`**
+  - **Headers**: `Authorization: Bearer <token>` (Perfil `admin`)
+  - **Corpo** (opcional): `{ "yieldRateMonthly": 0.018, "minInvestment": 100.00 }`
+  - **Descrição**: `confirmed → funding`. Define a meta de captação a partir de `proposedValue` e abre o título para investidores. Retorna `{ from, to, targetFunding, yieldRateMonthly, minInvestment }`.
+- **`POST /v1/admin/receivables/:id/advance-stage`**
+  - **Headers**: `Authorization: Bearer <token>` (Perfil `admin`)
+  - **Descrição**: Sem corpo. Avança `funded → processing → completed → payer_settled`; no último passo executa o payout pro-rata aos investidores. Retorna `{ from, to }`; outros status → `409`.
 
 ### 💱 Off-Ramp Financeiro (Etherfuse)
 

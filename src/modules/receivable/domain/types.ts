@@ -30,7 +30,10 @@ export type ReceivableRow = {
   statusHistory: Record<string, string> | null;
   targetFunding: number;
   funded: number;
-  yieldRateAnnual: number;
+  /** Simple monthly rate as a fraction (0.018 = 1.8% a.m.). */
+  yieldRateMonthly: number;
+  /** Minimum ticket per investment in reais; 0 = no minimum. */
+  minInvestment: number;
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;

@@ -234,7 +234,8 @@ async function main(): Promise<void> {
           value: "25000000",
           targetFundingCents: 25000000, // R$ 250.000,00
           fundedCents: 5000000, // R$ 50.000,00 already funded
-          yieldRateAnnual: 0.18, // 18%
+          yieldRateMonthly: 0.015, // 1.5% a.m.
+          minInvestmentCents: 100000, // R$ 1.000,00 ticket
           createdAt: now,
           updatedAt: now,
         })
@@ -249,7 +250,8 @@ async function main(): Promise<void> {
           value: "45000000",
           targetFundingCents: 45000000, // R$ 450.000,00
           fundedCents: 0,
-          yieldRateAnnual: 0.22, // 22%
+          yieldRateMonthly: 0.018, // 1.8% a.m.
+          minInvestmentCents: 500000, // R$ 5.000,00 ticket
           createdAt: now,
           updatedAt: now,
         })

@@ -70,7 +70,7 @@ export async function executeSystemPayerSettlement(
     if (to === RECEIVABLE_STATUS.PAYER_SETTLED && activeInvestments.length > 0) {
       executePayoutWrites(tx, exec, {
         receivableId: input.receivableId,
-        yieldRateAnnual: Number(row.yieldRateAnnual || 0),
+        yieldRateMonthly: Number(row.yieldRateMonthly || 0),
         activeInvestments,
         investorsList,
         paymentDate: now,
