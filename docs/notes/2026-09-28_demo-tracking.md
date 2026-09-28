@@ -23,18 +23,20 @@ session and after every commit. Plan and rationale: `2026-09-27_demo-week-plan.m
 
 | # | Gap | Repo | Status | Commit | Evidence |
 |---|-----|------|--------|--------|----------|
-| 0 | Offers not showing for investor / admin | backend + frontend | todo | | |
+| 0 | Offers not showing for investor / admin | backend + frontend | backend verified (seed + listing), frontend todo | backend `4b202e0` | session log 2026-09-28 (cloud, 2nd) |
 | 1 | Open funding: admin route + admin button | backend + frontend | backend done, frontend todo | backend `6b0a4a3` | session log 2026-09-28 (cloud) |
 | 3 | Pay seller / payer settles as admin actions + "advance stage" button | backend + frontend | backend done, frontend todo | backend `a2b23fd` | session log 2026-09-28 (cloud) |
 | 2 | Postgres parity smoke (founder, local Postgres) | backend | todo | | |
-| 5 | Demo seed: `aiReport`, seller `in_review`, one receivable per stage, investor balance | backend | todo | | |
-| 4 | One-command reset + seed, Supabase only with explicit flag | backend | todo | | |
+| 5 | Demo seed: `aiReport`, seller `in_review`, one receivable per stage, investor balance | backend | done | `4b202e0` | session log 2026-09-28 (cloud, 2nd) |
+| 4 | One-command reset + seed, Supabase only with explicit flag | backend | done | `2b430a3` | session log 2026-09-28 (cloud, 2nd) |
 | 6 | Deploy config (founder) | both | not started | | |
 | 7 | `statusHistory` on system transitions | backend | only if a screen needs it | | |
 | 8 | Seller `createdAt` year 58704 on Postgres | backend | check during gap 2 | | |
 | 9 | Balance race | backend | accepted debt | | |
+| 10 | Monthly yield + minimum ticket on offers (approved by the founder 2026-09-28) | backend + frontend | backend done, frontend todo | backend `e34e88a` | session log 2026-09-28 (cloud, 2nd) |
 
-Session scope agreed on 2026-09-28: gaps 0, 1 and 3, in that order.
+Session scope agreed on 2026-09-28: gaps 0, 1 and 3, in that order. Extended the same day by the
+founder to "follow the board": gaps 10, 5 and 4 done in the second cloud session.
 
 ## Code map for gaps 0, 1 and 3 (verified 2026-09-28)
 
@@ -146,6 +148,76 @@ the smoke below shows `GET /v1/receivables` as investor lists a receivable once 
   founder through the session (not committed to the repo).
 - Next: frontend buttons for gaps 1 and 3 (`dupply-frontend`), then gap 0 seed + admin
   service wiring, then gap 2 on the founder's Postgres.
+
+### 2026-09-28 (cloud session, 2nd: gaps 10, 0 backend, 5, 4)
+
+Branch `feat/demo-local`, one commit per gap, all pushed. `npm test`: 343 pass, 0 fail; lint clean.
+
+- **Gap 10** (`e34e88a`, new, approved by the founder): `yield_rate_annual` replaced by
+  `yield_rate_monthly` (simple monthly rate as a fraction, 0.018 = 1.8% a.m.) plus
+  `min_investment_cents`; migration `drizzle/0001_yielding_skin.sql` (SQLite; Postgres via
+  `db:push`). Analyst sets `yieldRateMonthly` / `minInvestment` with the offer on
+  `POST /v1/receivables/:id/risk-decision` (only with `offer`, else 400
+  `offer_terms_not_allowed_for_reprove`). Admin may override them with an optional body on
+  `open-funding`; both routes return the terms. Validation in
+  `receivable/domain/offerTerms.ts` (rate in `[0, 0.1]`, ticket ≤ target, else 400
+  `invalid_offer_terms`). Payout in `settlement/domain/yield.ts`:
+  `principal × (rate / 30) × days`, days from the investment that closed the target, min 1.
+  `POST /v1/investors/invest` rejects amounts below the ticket with 400
+  `investment_below_minimum` unless the amount closes the remaining target exactly.
+  Evidence (real server, curl): offer 900 @ 1.8% a.m. / ticket 100 → open-funding echoes the
+  terms → invest 50 = 400 `investment_below_minimum` → invest 900 → advance ×3 → investor
+  balance 1,000,000.54 (54 cents = 1 day of 1.8% a.m. on 900), investment `settled`.
+- **Gap 0 backend** (verified, no code beyond the seed): with the new seed, investor
+  `GET /v1/receivables` returns exactly the `funding` receivable (target 237,500, funded 50,000,
+  1.5% a.m., ticket 1,000); admin sees all 11 stages. The remaining cause is the frontend
+  `admin.service.ts` still reading mocks (see frontend list below).
+- **Gap 5** (`4b202e0`): `npm run seed:dev` rewritten as an idempotent demo seed
+  (`scripts/seed-dev.ts` + `scripts/seed/demo-fixtures.ts`). Accounts kept across runs;
+  seller profiles, receivables, payers and the investor ledger wiped and recreated. Active
+  seller "Nova Era Distribuidora" with one receivable per stage (`created`, `under_review`,
+  `offer`, `confirmed`, `funding`, `funded`, `processing`, `completed`, `payer_settled`,
+  `overdue`, `reproved`), full `receivableMetaData`, `statusHistory`, offer terms and an
+  `aiReport` JSON in the exact `DuplicataAiReport` shape the analyst screen renders. Second
+  seller "Horizonte Têxtil" in `in_review` (`seller.review@dupply.dev.local`). Investor with
+  R$ 1,000,000 available, 5 active investments (292,250) and 1 settled, reconciled by a single
+  deposit row. Verified through the API as investor, admin and analyst.
+- **Gap 4** (`2b430a3`): `npm run db:reset` is the one command (wipe → migrate/push → seed).
+  Guards verified: remote Postgres/Supabase refused without `ALLOW_REMOTE_DB_RESET=1`,
+  production refused without `FORCE_DB_RESET=1`. All npm scripts now use
+  `--env-file-if-exists=.env`, so cloud sessions without `.env` run them from env vars.
+- Frontend clone read-only at `feat/demo-local` (`5f07a93`) was used only to match the
+  `aiReport` shape and list the contract changes below. Nothing pushed there.
+- Known stale doc, out of demo scope: `.cursor/rules/data-models-relationships.mdc` still
+  describes `platform_users` / `receivable_md`; the receivables schema of record is in
+  `module-receivables.mdc` and `schema.ts`.
+
+#### Backend → frontend contract changes (for the frontend session)
+
+1. `yieldRateAnnual` is gone. Receivables (`GET /v1/receivables`, `GET /v1/receivables/:id`) and
+   investments (`GET /v1/investors/investments` → `receivable.yieldRateMonthly`) expose
+   `yieldRateMonthly` as a fraction; display `× 100` with the suffix "% a.m.". Frontend refs:
+   `services/offer.service.ts` (lines ~76, 78, 122, 139), `domain/offer/offer.types.ts:45`,
+   `pages/investor/InvestorHomePage.tsx:265` (currently prints "% a.a.").
+2. New `minInvestment` (reais, 0 = none) on receivables. `offer.service.ts` sets
+   `minAmount = targetAmount`; use `r.minInvestment > 0 ? r.minInvestment : quotaPrice`.
+3. `POST /v1/receivables/:id/risk-decision` with `decision: "offer"` accepts
+   `yieldRateMonthly` (0–0.1) and `minInvestment` (reais). Analyst offer form should send them.
+4. `POST /v1/admin/receivables/:id/open-funding`: optional body
+   `{ yieldRateMonthly?, minInvestment? }`; response
+   `{ from, to, targetFunding, yieldRateMonthly, minInvestment }`. Send no `content-type`
+   (or `{}`) when there is no body.
+5. `POST /v1/admin/receivables/:id/advance-stage`: no body, response `{ from, to }`, 409 on
+   any status outside `funded | processing | completed`.
+6. `POST /v1/investors/invest`: new 400 `investment_below_minimum`.
+7. Demo accounts (password `dev-password-change-me`): `seller@`, `seller.review@` (in_review),
+   `investor@`, `analyst@`, `admin@dupply.dev.local`. Investor balance is R$ 1,000,000 with
+   active positions; `seller.review@` is what the admin approves in the demo.
+8. Gap 0 frontend half: `services/admin.service.ts` imports only mocks; wire it to
+   `GET /v1/receivables` when `VITE_USE_MOCKS=false`.
+
+- Next: frontend items above (gaps 0, 1, 3, 10), then gap 2 on the founder's Postgres
+  (`npm run db:reset` + `scripts/smoke-admin-lifecycle.sh`), then gap 6.
 
 ## Open questions for the founder
 
