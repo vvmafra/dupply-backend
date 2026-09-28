@@ -128,9 +128,9 @@ the smoke below shows `GET /v1/receivables` as investor lists a receivable once 
   `completed→payer_settled` → investment `settled`, investor balance back to 1,000,000 →
   fourth `advance-stage` = 409.
 - Findings for later gaps:
-  - `scripts/seed-dev.ts` does not run migrations; on an empty SQLite file it fails with
-    `no such table: accounts`. Start the server once first (it migrates), then seed. Relevant
-    for gap 4 (one-command reset + seed).
+  - `scripts/seed-dev.ts` now runs the SQLite migrations itself (this session's "fix(scripts): seed-dev" commit), so
+    `npm run seed:dev` works on an empty `data/dupply.db` without starting the API first.
+    No-op on Postgres. Relevant for gap 4 (one-command reset + seed).
   - Receivables created through the normal flow have `yieldRateAnnual = 0`, so the payout
     returns principal only. `open-funding` does not set a yield. For the demo either the seed
     sets `yieldRateAnnual` (gap 5) or open-funding grows a `yieldRateAnnual` body field.

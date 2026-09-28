@@ -1,6 +1,7 @@
 /**
  * Dev seed: account + seller for local login smoke tests.
  * Run: `npm run seed:dev` (requires DATABASE_URL; uses same DB as the API).
+ * On SQLite it applies pending migrations first, so it works on an empty `data/dupply.db`.
  *
  * Default seller credentials:
  *   email: seller@dupply.dev.local
@@ -11,7 +12,7 @@ import { eq } from "drizzle-orm";
 import argon2 from "argon2";
 
 import { loadConfig } from "../src/infra/env/config.js";
-import { createDb } from "../src/infra/database/index.js";
+import { createDb, runMigrations } from "../src/infra/database/index.js";
 import { runTransaction } from "../src/infra/database/transaction.js";
 import { accounts, sellers, investors, payers, receivables } from "../src/infra/database/schema.runtime.js";
 import {
@@ -35,6 +36,9 @@ const DEV_INVESTOR = {
 async function main(): Promise<void> {
   const config = loadConfig();
   const dbHandle = createDb(config.DATABASE_URL);
+  // SQLite: apply drizzle/ migrations so the seed works on an empty file without starting
+  // the API first. No-op on Postgres (use `npm run db:push` there).
+  await runMigrations(dbHandle);
   const { db } = dbHandle;
   const passwordHash = await argon2.hash(DEV_PASSWORD);
   const now = new Date();
