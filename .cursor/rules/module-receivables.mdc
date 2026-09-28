@@ -183,6 +183,7 @@ Todas as rotas seguem o padrão de `routes-swagger.mdc`: `app.withTypeProvider<Z
 | POST | `/v1/receivables/:id/seller-decision` | `seller` | `bearerAuth` + ownership | `Receivables` | `offer → confirmed / rejected`; retorna `{ ok: true }` |
 | GET | `/v1/receivables` | `seller` / `risk_analyst` / `admin` | `bearerAuth` | `Receivables` | Lista filtrada por role; retorna `{ receivables: [...] }` |
 | GET | `/v1/receivables/:id` | `seller` / `risk_analyst` / `admin` | `bearerAuth` + ownership | `Receivables` | Retorna `{ receivable: {...} }` |
+| POST | `/v1/admin/receivables/:id/open-funding` | `admin` (trigger; actor de domínio é `system`) | `bearerAuth` + `requireRoles("admin")` | `Admin` | `confirmed → funding`; seta `targetFundingCents` de `proposedValue` (fallback `value`) quando 0; retorna `{ from, to, targetFunding }` |
 | POST | `/v1/internal/receivables/:id/advance-settlement` | sistema | `dupplyApiKey` | `Internal` | `confirmed → processing → completed`; retorna `{ ok: true }` |
 | POST | `/v1/internal/receivables/:id/payer-settlement` | sistema | `dupplyApiKey` | `Internal` | `completed → payer_settled / overdue`; retorna `{ ok: true }` |
 
