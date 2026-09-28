@@ -331,8 +331,9 @@ O projeto utiliza o **Drizzle ORM** devido à sua segurança de tipos nativa e p
 
 - **`npm run db:push`**: Sincroniza o schema das tabelas diretamente com o banco de dados sem a necessidade de migrações manuais em ambiente dev.
 - **`npm run db:generate`**: Gera arquivos de migração SQL na pasta `drizzle/`.
-- **`npm run db:reset`**: Reseta completamente o banco de dados SQLite/Postgres local e aplica o schema do zero.
-- **`npm run seed:dev`**: Executa o script de povoamento com fixtures e contas de demonstração.
+- **`npm run db:reset`**: Reset em um comando — apaga o banco (SQLite: remove o arquivo; Postgres local: drop/create do database), aplica o schema (migrations no SQLite, `db:push` no Postgres) e roda o `seed:dev`. Pare a API antes. Recusa `NODE_ENV=production` (override: `FORCE_DB_RESET=1`) e qualquer Postgres remoto, Supabase incluído (override explícito: `ALLOW_REMOTE_DB_RESET=1`).
+- **`npm run seed:dev`**: Popula o cenário de demo (ver seção 4). Idempotente: re-executar reseta os dados de demo e mantém as contas.
+- Os scripts usam `--env-file-if-exists=.env`: sem `.env`, as variáveis vêm do ambiente (é assim que as sessões cloud rodam com SQLite).
 
 ---
 
