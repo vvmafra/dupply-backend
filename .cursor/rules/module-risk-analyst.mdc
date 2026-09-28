@@ -1,6 +1,6 @@
 ---
 description: Módulo risk_analyst e admin — perfis de plataforma vinculados a accounts
-globs: src/routes/v1/risk-analysts*,src/routes/v1/admins*,src/domain/risk-analyst/**,src/domain/admin/**
+globs: src/modules/risk-analyst/**,src/modules/admin/**
 alwaysApply: false
 ---
 

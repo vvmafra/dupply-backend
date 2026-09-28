@@ -1,6 +1,6 @@
 ---
 description: Módulo documents — armazenamento polimórfico de documentos vinculados a qualquer entidade
-globs: src/routes/v1/documents*,src/domain/document/**,src/application/document/**
+globs: src/modules/documents/**
 alwaysApply: false
 ---
 

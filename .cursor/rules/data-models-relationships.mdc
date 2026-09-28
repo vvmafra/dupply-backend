@@ -1,6 +1,6 @@
 ---
 description: Database schema, tables, relationships and conventions for all Drizzle entities in dupply-backend
-globs: src/db/**,src/db/schema.ts
+globs: src/infra/database/**
 alwaysApply: false
 ---
 

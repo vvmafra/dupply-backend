@@ -26,7 +26,12 @@ All artifacts live under `tasks/prd-{kebab-name}/`. Never start coding without a
 
 ## Context routing
 
-Load the relevant rule before working in an area:
+Rules live in `.cursor/rules/<name>.mdc`. Cursor attaches them by `globs`; here
+`.claude/hooks/inject-cursor-rules.mjs` does the same — the `alwaysApply` rules load at session
+start, and a glob-matched rule loads the first time you read or edit a file it covers (once per
+session). If a rule has not shown up, read it with `cat .cursor/rules/<name>.mdc`.
+
+Rule-to-area map:
 
 | Working on | Load rule |
 |------------|-----------|
