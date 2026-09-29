@@ -21,6 +21,7 @@ export type AdminAdvanceStageResult = {
  *   funded     → processing
  *   processing → completed
  *   completed  → payer_settled   (runs executeSystemPayerSettlement → payout)
+ *   overdue    → payer_settled   (late payment; same payout)
  *
  * Any other status throws `ReceivableTransitionError("invalid_admin_stage_advance")`.
  */
@@ -45,6 +46,7 @@ export async function executeAdminAdvanceStage(
       });
       return { from, to: RECEIVABLE_STATUS.COMPLETED };
     case RECEIVABLE_STATUS.COMPLETED:
+    case RECEIVABLE_STATUS.OVERDUE:
       await executeSystemPayerSettlement(deps, {
         receivableId: input.receivableId,
         outcome: "settled",

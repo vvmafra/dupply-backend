@@ -12,29 +12,13 @@ import { RECEIVABLE_ERROR_CODES, ReceivableError } from "../domain/errors.js";
 import type { ReceivableMetaData, ReceivableRow } from "../domain/types.js";
 import { toCents, toReais } from "../../../shared/money.js";
 
+export { appendStatusHistory } from "../../../shared/statusHistory.js";
+
 export type ReceivableDbRow = typeof receivables.$inferSelect;
 
 export function valueReaisToDbCentsText(reais?: number): string {
   if (reais === undefined) return "0";
   return String(toCents(reais));
-}
-
-export function appendStatusHistory(
-  currentHistoryJson: string | null,
-  newStatus: string
-): string {
-  let history: Record<string, string> = {};
-  if (currentHistoryJson) {
-    try {
-      history = JSON.parse(currentHistoryJson);
-    } catch {
-      // ignore
-    }
-  }
-  if (!history[newStatus]) {
-    history[newStatus] = new Date().toISOString();
-  }
-  return JSON.stringify(history);
 }
 
 export function valueDbCentsTextToReais(centsText: string): number {

@@ -5,6 +5,7 @@ import type { AppDeps } from "../../../../compose/deps.js";
 import { investors, investorInvestments, receivables } from "../../../../infra/database/schema.runtime.js";
 import { runTransaction } from "../../../../infra/database/transaction.js";
 import { toCents, toReais } from "../../../../shared/money.js";
+import { appendStatusHistory } from "../../../../shared/statusHistory.js";
 import { InvestorError, INVESTOR_ERROR_CODES } from "../../domain/errors.js";
 
 export type InvestInput = {
@@ -143,6 +144,7 @@ export async function executeInvest(
       };
       if (isFullyFunded) {
         receivableUpdate.status = "funded";
+        receivableUpdate.statusHistory = appendStatusHistory(receivable.statusHistory, "funded");
       }
 
       exec(

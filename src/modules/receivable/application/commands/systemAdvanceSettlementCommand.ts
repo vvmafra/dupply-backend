@@ -7,7 +7,7 @@ import {
   RECEIVABLE_STATUS,
   type ReceivableStatus,
 } from "../../domain/transitions.js";
-import { loadReceivableOrThrow } from "../receivableHelpers.js";
+import { appendStatusHistory, loadReceivableOrThrow } from "../receivableHelpers.js";
 
 export type SystemAdvanceInput = {
   receivableId: string;
@@ -24,6 +24,10 @@ export async function executeSystemAdvanceSettlement(
 
   await deps.db
     .update(receivables)
-    .set({ status: input.targetStatus, updatedAt: new Date() })
+    .set({
+      status: input.targetStatus,
+      statusHistory: appendStatusHistory(row.statusHistory, input.targetStatus),
+      updatedAt: new Date(),
+    })
     .where(eq(receivables.id, input.receivableId));
 }

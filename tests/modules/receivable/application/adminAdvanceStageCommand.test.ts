@@ -110,6 +110,13 @@ test("admin advance stage: funded → processing → completed → payer_settled
       .where(eq(investorInvestments.receivableId, id));
     assert.equal(investment?.status, "settled");
 
+    // every system transition is recorded in statusHistory (same shape as the seed)
+    const [settledRow] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    const history = JSON.parse(settledRow?.statusHistory ?? "{}") as Record<string, string>;
+    for (const s of ["funding", "funded", "processing", "completed", "payer_settled"]) {
+      assert.ok(history[s], `statusHistory.${s} recorded`);
+    }
+
     // terminal: a fourth call is rejected and status is unchanged
     await assert.rejects(
       executeAdminAdvanceStage(deps, { receivableId: id }),
@@ -153,6 +160,32 @@ test("admin advance stage: unknown receivable → not_found", async () => {
       (e: unknown) =>
         e instanceof ReceivableError && e.code === RECEIVABLE_ERROR_CODES.NOT_FOUND,
     );
+  } finally {
+    await handle.close();
+  }
+});
+
+test("admin advance stage: overdue → payer_settled (late payment) with payout", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    const { id, investorId } = await fundedReceivable(deps, sellerId);
+    await deps.db
+      .update(receivables)
+      .set({ status: RECEIVABLE_STATUS.OVERDUE })
+      .where(eq(receivables.id, id));
+
+    const result = await executeAdminAdvanceStage(deps, { receivableId: id });
+    assert.deepEqual(result, { from: "overdue", to: "payer_settled" });
+    assert.equal(await statusOf(deps, id), RECEIVABLE_STATUS.PAYER_SETTLED);
+
+    const [investment] = await deps.db
+      .select()
+      .from(investorInvestments)
+      .where(eq(investorInvestments.receivableId, id));
+    assert.equal(investment?.status, "settled");
+    const [investor] = await deps.db.select().from(investors).where(eq(investors.id, investorId));
+    assert.ok((investor?.balanceCents ?? 0) >= 100000, "principal returned");
   } finally {
     await handle.close();
   }

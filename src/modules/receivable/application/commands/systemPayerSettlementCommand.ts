@@ -13,7 +13,7 @@ import {
   RECEIVABLE_STATUS,
   type ReceivableStatus,
 } from "../../domain/transitions.js";
-import { loadReceivableOrThrow } from "../receivableHelpers.js";
+import { appendStatusHistory, loadReceivableOrThrow } from "../receivableHelpers.js";
 
 export type SystemPayerSettlementInput = {
   receivableId: string;
@@ -80,7 +80,7 @@ export async function executeSystemPayerSettlement(
     exec(
       tx
         .update(receivables)
-        .set({ status: to, updatedAt: now })
+        .set({ status: to, statusHistory: appendStatusHistory(row.statusHistory, to), updatedAt: now })
         .where(eq(receivables.id, input.receivableId)),
     );
   });

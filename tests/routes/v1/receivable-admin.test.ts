@@ -223,6 +223,16 @@ test("POST /v1/admin/receivables/:id/advance-stage as admin walks funded → pay
       headers: { authorization: `Bearer ${token}` },
     });
     assert.equal(res.statusCode, 409);
+
+    // overdue is advanceable too (late payment)
+    await ctx.deps.db.update(receivables).set({ status: "overdue" }).where(eq(receivables.id, id));
+    res = await ctx.app.inject({
+      method: "POST",
+      url: `/v1/admin/receivables/${id}/advance-stage`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(res.statusCode, 200, res.body);
+    assert.deepEqual(res.json(), { from: "overdue", to: "payer_settled" });
   } finally {
     await ctx.app.close();
     await ctx.handle.close();

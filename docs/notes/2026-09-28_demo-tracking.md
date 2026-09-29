@@ -30,7 +30,7 @@ session and after every commit. Plan and rationale: `2026-09-27_demo-week-plan.m
 | 5 | Demo seed: `aiReport`, seller `in_review`, one receivable per stage, investor balance | backend | done | `4b202e0` | session log 2026-09-28 (cloud, 2nd) |
 | 4 | One-command reset + seed, Supabase only with explicit flag | backend | done | `2b430a3` | session log 2026-09-28 (cloud, 2nd) |
 | 6 | Deploy config (founder) | both | not started | | |
-| 7 | `statusHistory` on system transitions | backend | only if a screen needs it | | |
+| 7 | `statusHistory` on system transitions | backend | done (seed and live flow now match) | see session log 2026-09-29 | session log 2026-09-29 |
 | 8 | Seller `createdAt` year 58704 on Postgres | backend | check during gap 2 | | |
 | 9 | Balance race | backend | accepted debt | | |
 | 10 | Monthly yield + minimum ticket on offers (approved by the founder 2026-09-28) | backend + frontend | backend done, frontend todo | backend `e34e88a` | session log 2026-09-28 (cloud, 2nd) |
@@ -218,6 +218,18 @@ Branch `feat/demo-local`, one commit per gap, all pushed. `npm test`: 343 pass, 
 
 - Next: frontend items above (gaps 0, 1, 3, 10), then gap 2 on the founder's Postgres
   (`npm run db:reset` + `scripts/smoke-admin-lifecycle.sh`), then gap 6.
+
+### 2026-09-29 (cloud session, gap 7 + advance-stage on overdue)
+
+- Gap 7: every system transition now appends `statusHistory` (`systemAdvanceSettlement`,
+  `systemPayerSettlement`, and `funding → funded` inside `executeInvest`), so the timeline of a
+  receivable driven live through the demo matches the seeded ones. Helper moved to
+  `src/shared/statusHistory.ts` (pure) and re-exported from `receivableHelpers.ts`, keeping the
+  investor module off the receivable module's application layer.
+- `POST /v1/admin/receivables/:id/advance-stage` also accepts `overdue → payer_settled` (late
+  payment, same payout). The seed has one `overdue` receivable, so the admin button works on it.
+- Frontend contract addition: item 5 of the list above, `advance-stage` is now valid on
+  `funded | processing | completed | overdue`.
 
 ## Open questions for the founder
 
