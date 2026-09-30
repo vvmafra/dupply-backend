@@ -1,6 +1,6 @@
 import type { FastifyReply, FastifyRequest } from "fastify";
 
-import type { AppConfig } from "../config.js";
+import type { AppConfig } from "../infra/env/config.js";
 
 export function requireDupplyApiKey(config: AppConfig) {
   return async function requireDupplyApiKeyHook(

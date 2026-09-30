@@ -1,0 +1,57 @@
+---
+description: Onde e como escrever testes — pasta tests/ espelhando src/, Node test runner
+globs: tests/**/*
+alwaysApply: false
+---
+
+# Testes (tests/)
+
+Testes ficam **fora de `src/`**, na pasta irmã `tests/`, espelhando a estrutura de `src/`.
+
+## Layout
+
+```
+src/modules/account/domain/policies.ts              →  tests/modules/account/domain/policies.test.ts
+src/modules/account/application/commands/           →  tests/modules/account/application/commands/
+src/modules/auth/api/auth.ts                        →  tests/routes/v1/accountAuthRoutes.test.ts
+src/infra/gateways/factories/createGateways.ts      →  tests/infra/gateways/...
+```
+
+- **Nunca** criar `*.test.ts` dentro de `src/`.
+- Nome do arquivo: `{module}.test.ts` (mesmo nome do módulo testado + `.test.ts`).
+- Subpastas de `tests/` replicam o caminho relativo em `src/` (sem o prefixo `src/`). Preferir `tests/modules/{context}/` para código de produto.
+
+## Imports
+
+Importar código de produção via caminho relativo até `src/`:
+
+```typescript
+// tests/modules/account/domain/policies.test.ts
+import { assertCanReadAccount } from "../../../../src/modules/account/domain/policies.js";
+```
+
+- Sempre usar extensão `.js` nos imports (NodeNext / ESM).
+- Testes **não** importam outros testes; importam apenas de `src/`.
+
+## Runner e stack
+
+- **Runner:** Node.js built-in (`node:test` + `node:assert/strict`).
+- **Comando:** `npm test` → `node --import tsx --test $(find tests -name '*.test.ts')`.
+- Sem Jest/Vitest — manter o padrão existente.
+
+## Tipos de teste
+
+| Tipo | Onde | Exemplo |
+|------|------|---------|
+| Unit (domain) | `tests/modules/{ctx}/domain/` | policies, transitions |
+| Application | `tests/modules/{ctx}/application/` | commands, queries com DB in-memory |
+| Infra / gateways | `tests/infra/` | providers, factories |
+| HTTP / route | `tests/routes/` | Fastify `app.inject()` |
+
+Testes de integração/e2e futuros: `tests/integration/` ou `tests/e2e/` (não co-localizar em `src/`).
+
+## Ao adicionar feature
+
+1. Implementar em `src/modules/{context}/` (ou `src/infra/` se for infra).
+2. Criar teste em `tests/` no caminho espelhado.
+3. Rodar `npm test` antes de finalizar.

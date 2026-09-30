@@ -1,0 +1,613 @@
+import assert from "node:assert/strict";
+import { randomUUID } from "node:crypto";
+import test from "node:test";
+
+import { eq } from "drizzle-orm";
+import Fastify from "fastify";
+import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
+
+import { loadConfig } from "../../../src/infra/env/config.js";
+import { createDb, runMigrations, type DbHandle } from "../../../src/infra/database/index.js";
+import { receivables } from "../../../src/infra/database/schema.runtime.js";
+import type { AccountRole } from "../../../src/modules/account/domain/types.js";
+import { signAccessToken } from "../../../src/infra/auth/jwt.js";
+import { registerCookie } from "../../../src/plugins/cookie.js";
+import { requireJwt } from "../../../src/plugins/jwt-auth.js";
+import { registerAuthRoutes } from "../../../src/modules/auth/api/auth.js";
+import { registerReceivableRoutes } from "../../../src/modules/receivable/api/receivables.js";
+import type { AppDeps } from "../../../src/compose/deps.js";
+import {
+  completeReceivableMetaData,
+  PAYER_CNPJ,
+  setupActiveSeller,
+} from "../../helpers/receivableTestHelpers.js";
+import { insertAccount, TEST_PASSWORD } from "../../helpers/sellerTestHelpers.js";
+import { createGateways } from "../../../src/infra/gateways/factories/createGateways.js";
+
+type TestApp = {
+  app: ReturnType<typeof Fastify>;
+  deps: AppDeps;
+  handle: DbHandle;
+  config: ReturnType<typeof loadConfig>;
+};
+
+async function createTestApp(): Promise<TestApp> {
+  const handle = createDb("file::memory:");
+  await runMigrations(handle);
+  const config = loadConfig({
+    JWT_SECRET: "test-secret-min-16-chars",
+    DATABASE_URL: "file::memory:",
+  });
+  const deps: AppDeps = { db: handle.db, config, gateways: createGateways(config) };
+
+  const app = Fastify({ logger: false });
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
+
+  await registerCookie(app);
+
+  await app.register(async (scope) => {
+    await registerAuthRoutes(scope, deps);
+  });
+
+  await app.register(async (scope) => {
+    scope.addHook("preHandler", requireJwt(config));
+    await registerReceivableRoutes(scope, deps);
+  });
+
+  await app.ready();
+  return { app, deps, handle, config };
+}
+
+async function loginAs(
+  app: TestApp["app"],
+  email: string,
+  password = TEST_PASSWORD,
+): Promise<string> {
+  const res = await app.inject({
+    method: "POST",
+    url: "/v1/auth/login",
+    payload: { email, password },
+  });
+  assert.equal(res.statusCode, 200);
+  return (res.json() as { accessToken: string }).accessToken;
+}
+
+async function signToken(
+  config: TestApp["config"],
+  sub: string,
+  role: AccountRole,
+  profileId = `placeholder-${role}-${sub}`,
+): Promise<string> {
+  return signAccessToken(config, { sub, role, profileId });
+}
+
+test("POST /v1/receivables with admin token returns 403", async () => {
+  const { app, deps, handle, config } = await createTestApp();
+  try {
+    const { id: adminId } = await insertAccount(deps, { role: "admin" });
+    const token = await signToken(config, adminId, "admin");
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: 500,
+      },
+    });
+    assert.equal(res.statusCode, 403);
+    assert.deepEqual(res.json(), { error: "forbidden" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables with seller token returns 201 draft", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email, sellerId } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: 500,
+      },
+    });
+    assert.equal(res.statusCode, 201);
+    const { id } = res.json() as { id: string };
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.status, "created");
+    assert.equal(row?.sellerId, sellerId);
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables inactive seller returns 403 seller_not_active", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await insertAccount(deps);
+    const token = await loginAs(app, email);
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+      },
+    });
+    assert.equal(res.statusCode, 403);
+    assert.deepEqual(res.json(), { error: "seller_not_active" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/submit with admin token returns 403", async () => {
+  const { app, deps, handle, config } = await createTestApp();
+  try {
+    const { id: adminId } = await insertAccount(deps, { role: "admin" });
+    const token = await signToken(config, adminId, "admin");
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: 500,
+        receivableMetaData: completeReceivableMetaData,
+      },
+    });
+    assert.equal(res.statusCode, 403);
+    assert.deepEqual(res.json(), { error: "forbidden" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/submit with complete metadata returns 201 under_review", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email, sellerId } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: 500,
+        receivableMetaData: completeReceivableMetaData,
+      },
+    });
+    assert.equal(res.statusCode, 201);
+    const body = res.json() as { id: string; status: string };
+    assert.equal(body.status, "under_review");
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, body.id));
+    assert.equal(row?.status, "under_review");
+    assert.equal(row?.sellerId, sellerId);
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/submit with incomplete metadata returns 400 incomplete_metadata", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: 500,
+        receivableMetaData: { type: "commercial" },
+      },
+    });
+    assert.equal(res.statusCode, 400);
+    assert.deepEqual(res.json(), { error: "incomplete_metadata" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/submit inactive seller returns 403 seller_not_active", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await insertAccount(deps);
+    const token = await loginAs(app, email);
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: 500,
+        receivableMetaData: completeReceivableMetaData,
+      },
+    });
+    assert.equal(res.statusCode, 403);
+    assert.deepEqual(res.json(), { error: "seller_not_active" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/:id/confirm returns 404 (removed)", async () => {
+  const { app, handle } = await createTestApp();
+  try {
+    const res = await app.inject({
+      method: "POST",
+      url: `/v1/receivables/${randomUUID()}/confirm`,
+    });
+    assert.equal(res.statusCode, 404);
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("GET /v1/receivables as seller returns only own receivables", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const sellerA = await setupActiveSeller(deps);
+    const sellerB = await setupActiveSeller(deps);
+    const tokenA = await loginAs(app, sellerA.email);
+
+    for (const seller of [sellerA, sellerB]) {
+      const token = await loginAs(app, seller.email);
+      await app.inject({
+        method: "POST",
+        url: "/v1/receivables",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          payerCnpj: PAYER_CNPJ,
+          payerLegalName: "Payer Corp",
+          payerFinancialEmail: "finance@payer.com",
+        },
+      });
+    }
+
+    const res = await app.inject({
+      method: "GET",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${tokenA}` },
+    });
+    assert.equal(res.statusCode, 200);
+    const body = res.json() as { receivables: { sellerId: string }[] };
+    assert.equal(body.receivables.length, 1);
+    assert.equal(body.receivables[0]?.sellerId, sellerA.sellerId);
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST seller-decision accept transitions offer to confirmed", async () => {
+  const { app, deps, handle, config } = await createTestApp();
+  try {
+    const { email, sellerId } = await setupActiveSeller(deps);
+    const sellerToken = await loginAs(app, email);
+
+    const submitRes = await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${sellerToken}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: 500,
+        receivableMetaData: completeReceivableMetaData,
+      },
+    });
+    assert.equal(submitRes.statusCode, 201);
+    const { id } = submitRes.json() as { id: string };
+
+    const { id: analystId } = await insertAccount(deps, { role: "risk_analyst" });
+    const analystToken = await signToken(config, analystId, "risk_analyst");
+
+    const riskRes = await app.inject({
+      method: "POST",
+      url: `/v1/receivables/${id}/risk-decision`,
+      headers: { authorization: `Bearer ${analystToken}` },
+      payload: { decision: "offer", proposedValue: 450 },
+    });
+    assert.equal(riskRes.statusCode, 200);
+
+    const acceptRes = await app.inject({
+      method: "POST",
+      url: `/v1/receivables/${id}/seller-decision`,
+      headers: { authorization: `Bearer ${sellerToken}` },
+      payload: { decision: "accept" },
+    });
+    assert.equal(acceptRes.statusCode, 200);
+    assert.deepEqual(acceptRes.json(), { ok: true });
+
+    const getRes = await app.inject({
+      method: "GET",
+      url: `/v1/receivables/${id}`,
+      headers: { authorization: `Bearer ${sellerToken}` },
+    });
+    assert.equal(getRes.statusCode, 200);
+    const body = getRes.json() as { receivable: { status: string; sellerId: string } };
+    assert.equal(body.receivable.status, "confirmed");
+    assert.equal(body.receivable.sellerId, sellerId);
+
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.status, "confirmed");
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/:id/risk-decision with seller token returns 403", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+    const res = await app.inject({
+      method: "POST",
+      url: `/v1/receivables/${randomUUID()}/risk-decision`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { decision: "offer", proposedValue: 900 },
+    });
+    assert.equal(res.statusCode, 403);
+    assert.deepEqual(res.json(), { error: "forbidden" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("full draft flow patch and submit", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+
+    const createRes = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+      },
+    });
+    const { id } = createRes.json() as { id: string };
+
+    const patchRes = await app.inject({
+      method: "PATCH",
+      url: `/v1/receivables/${id}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { receivableMetaData: completeReceivableMetaData, value: 500 },
+    });
+    assert.equal(patchRes.statusCode, 200);
+
+    const submitRes = await app.inject({
+      method: "POST",
+      url: `/v1/receivables/${id}/submit`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(submitRes.statusCode, 200);
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.status, "under_review");
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables duplicate billNumber returns 409 duplicate_bill_number", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+    const payload = {
+      payerCnpj: PAYER_CNPJ,
+      payerLegalName: "Payer Corp",
+      payerFinancialEmail: "finance@payer.com",
+      receivableMetaData: { billNumber: "ROUTE-DUP-1" },
+    };
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload,
+    });
+    assert.equal(first.statusCode, 201);
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        ...payload,
+        receivableMetaData: { billNumber: " route-dup-1 " },
+      },
+    });
+    assert.equal(second.statusCode, 409);
+    assert.deepEqual(second.json(), { error: "duplicate_bill_number" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/submit duplicate returns 409 duplicate_bill_number", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+    const payload = {
+      payerCnpj: PAYER_CNPJ,
+      payerLegalName: "Payer Corp",
+      payerFinancialEmail: "finance@payer.com",
+      value: 500,
+      receivableMetaData: completeReceivableMetaData,
+    };
+
+    const first = await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${token}` },
+      payload,
+    });
+    assert.equal(first.statusCode, 201);
+
+    const second = await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        ...payload,
+        receivableMetaData: { ...completeReceivableMetaData, billNumber: " bill-001 " },
+      },
+    });
+    assert.equal(second.statusCode, 409);
+    assert.deepEqual(second.json(), { error: "duplicate_bill_number" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("PATCH /v1/receivables/:id duplicate billNumber returns 409", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+
+    const firstCreate = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        receivableMetaData: { billNumber: "PATCH-DUP-A" },
+      },
+    });
+    const secondCreate = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        receivableMetaData: { billNumber: "PATCH-DUP-B" },
+      },
+    });
+    const { id: secondId } = secondCreate.json() as { id: string };
+    assert.equal(firstCreate.statusCode, 201);
+    assert.equal(secondCreate.statusCode, 201);
+
+    const patchRes = await app.inject({
+      method: "PATCH",
+      url: `/v1/receivables/${secondId}`,
+      headers: { authorization: `Bearer ${token}` },
+      payload: { receivableMetaData: { billNumber: "patch-dup-a" } },
+    });
+    assert.equal(patchRes.statusCode, 409);
+    assert.deepEqual(patchRes.json(), { error: "duplicate_bill_number" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});
+
+test("POST /v1/receivables/:id/submit duplicate returns 409", async () => {
+  const { app, deps, handle } = await createTestApp();
+  try {
+    const { email } = await setupActiveSeller(deps);
+    const token = await loginAs(app, email);
+
+    await app.inject({
+      method: "POST",
+      url: "/v1/receivables/submit",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        value: 500,
+        receivableMetaData: completeReceivableMetaData,
+      },
+    });
+
+    const draftRes = await app.inject({
+      method: "POST",
+      url: "/v1/receivables",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        payerCnpj: PAYER_CNPJ,
+        payerLegalName: "Payer Corp",
+        payerFinancialEmail: "finance@payer.com",
+        receivableMetaData: { billNumber: "OTHER-SUBMIT-BILL" },
+      },
+    });
+    const { id } = draftRes.json() as { id: string };
+    assert.equal(draftRes.statusCode, 201);
+
+    await deps.db
+      .update(receivables)
+      .set({
+        receivableMetaData: JSON.stringify({
+          ...completeReceivableMetaData,
+          billNumber: "BILL-001",
+          fiscalDocumentKey: "99999999999999999999999999999999999999999999",
+        }),
+        updatedAt: new Date(),
+      })
+      .where(eq(receivables.id, id));
+
+    const submitRes = await app.inject({
+      method: "POST",
+      url: `/v1/receivables/${id}/submit`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+    assert.equal(submitRes.statusCode, 409);
+    assert.deepEqual(submitRes.json(), { error: "duplicate_bill_number" });
+  } finally {
+    await app.close();
+    await handle.close();
+  }
+});

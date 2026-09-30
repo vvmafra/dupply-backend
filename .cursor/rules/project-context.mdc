@@ -1,0 +1,74 @@
+---
+description: Dupply backend stack, bounded contexts, and where to look for authoritative docs
+alwaysApply: true
+---
+
+# Dupply backend — project context
+
+**Repo:** `dupply-backend` — Fastify HTTP API (`src/`) + Soroban contract (`soroban/`).
+
+## Stack
+
+- **Runtime:** Node 20+, TypeScript (ESM), Fastify 5
+- **Persistence:** Drizzle ORM — PostgreSQL/Supabase (prod + dev via Docker); `drizzle-orm/pg-core`
+- **Auth:** JWT (humans) + `X-Dupply-Api-Key` (service/BFF/workers); payers via magic link (legacy respond = 410)
+- **Integrations:** Etherfuse (ramp/FX) and Stellar Soroban (trade bill registry) via `src/infra/gateways/`
+
+## Layout (canonical)
+
+```
+src/modules/{context}/   # api/ + application/ + domain/  (vertical slices)
+src/infra/               # env, database, blockchain, gateways, auth, generated
+src/compose/             # AppDeps + registerModules
+src/plugins/             # global HTTP cross-cutting (JWT, CORS, Swagger)
+src/shared/              # pure helpers (money)
+```
+
+Do **not** introduce top-level `src/domain/`, `src/application/`, `src/routes/`, or `src/integrations/` — those layouts are retired.
+
+## Entities & modules (build order)
+
+| # | Module | Entities | Context file |
+|---|--------|----------|--------------|
+| 1 | account | `accounts` | `module-account.mdc` |
+| 2 | seller + wallet | `sellers`, `wallets` | `module-seller.mdc`, `module-wallet.mdc` |
+| 3 | risk_analyst + admin | `risk_analysts`, `admins` | `module-risk-analyst.mdc` |
+| 4 | payer | `payers`, `payer_magic_tokens` | `module-payer.mdc` |
+| 5 | receivable | `receivables` | `module-receivables.mdc` |
+| 6 | documents | `documents` | `module-documents.mdc` |
+| 7 | registry on-chain | `registry_on_chain` / trade-bill drafts | `module-registry.mdc` |
+| 8 | ramp | `ramp_quotes`, `ramp_orders` | `module-ramp.mdc` |
+
+Full entity map + cross-cutting standards (timestamps, soft delete, IDs): **`entities-overview.mdc`**
+
+## Bounded contexts (do not mix)
+
+| Context | Code paths | External system |
+| ------- | ---------- | --------------- |
+| **Platform / Identity** | `modules/auth`, `modules/account`, `modules/seller`, `modules/payer` | Internal DB; `infra/auth/` |
+| **Receivables** | `modules/receivable/` | Internal DB only |
+| **Ramp** | `modules/ramp/`; `infra/gateways/providers/etherfuse/` | Etherfuse FX API |
+| **Registry** | `modules/registry/` (`domain/tradeBill/`); `infra/blockchain/stellar/`; `infra/gateways` → `RegistryGateway` | Soroban `TradeBillRegistry` |
+
+Cross-context correlation: explicit IDs in DB or `compose/` callbacks only — no cross-module `domain/` imports.
+
+## Authoritative docs (read before large changes)
+
+- `docs/ARCHITECTURE-RULES.md` — modular layout, CQRS, import matrix
+- `src/infra/gateways/README.md` — ports vs providers vs factories
+- `API.md` — routes, env vars, smoke checklist
+- `.cursor/rules/entities-overview.mdc` — entity map, cross-cutting standards, module order
+- `docs/notes/2026-05-19_platform-auth-rbac-receivable-v1.md` — receivable RBAC + lifecycle
+- `docs/notes/2026-05-18_v1-duplicata-contract-integration-architecture.md` — trade bill + Soroban flow
+
+## Schema standards
+
+- **IDs:** `cuid2` gerado na aplicação
+- **Timestamps:** `timestamp` nativo PostgreSQL (`created_at`, `updated_at`, `deleted_at`)
+- **Soft delete:** `deleted_at IS NOT NULL` = deletado; toda query padrão filtra `WHERE deleted_at IS NULL`
+- **`updated_at`:** bumped em toda mutação (handler de comando ou trigger PG)
+- **Schema path:** `src/infra/database/schema.ts`
+
+## Language
+
+Code, API fields, DB columns, and technical docs are **English**. User-facing copy may be localized elsewhere.

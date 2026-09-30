@@ -1,0 +1,90 @@
+---
+description: Modular architecture — layers inside modules, infra boundaries, CQRS, and import matrix for src/
+globs: src/**/*
+alwaysApply: false
+---
+
+# Modular architecture (src/)
+
+Source of truth: `docs/ARCHITECTURE-RULES.md`. Summary for day-to-day edits:
+
+## Layout
+
+| Area | Path | Role |
+| ---- | ---- | ---- |
+| Modules | `src/modules/{context}/` | Vertical slice: `api/` + `application/` + `domain/` |
+| Infra | `src/infra/` | env, database, blockchain, gateways, auth, generated |
+| Compose | `src/compose/` | `AppDeps` + `registerModules` |
+| Plugins | `src/plugins/` | Global HTTP cross-cutting (no business rules) |
+| Shared | `src/shared/` | Pure helpers (e.g. money) |
+
+## Layers (apply **inside** each module)
+
+| Layer | Path | May do | Must not |
+| ----- | ---- | ------ | -------- |
+| HTTP (api) | `modules/{ctx}/api/` | Zod, auth (`requireJwt`, `requireRoles`), thin handlers (~≤50 lines) | Business orchestration, vendor SDKs, Drizzle in new flows |
+| Application | `modules/{ctx}/application/` | Use cases; orchestrate domain + gateway ports + DB | Import Fastify into domain |
+| Domain | `modules/{ctx}/domain/` | Invariants, status machines, pure types | Fastify, Drizzle, HTTP clients, `process.env`, vendor SDKs |
+| Gateways | `infra/gateways/` | Ports, providers, factories | Product business rules in providers beyond ACL mapping |
+| Infrastructure | `infra/database/`, `infra/env/`, `infra/auth/`, `infra/blockchain/` | Schema, migrations, config, chain adapters | Business rules |
+| Generated | `infra/generated/` | Soroban bindings from Wasm | Hand-edit (regenerate instead) |
+
+## Import direction
+
+```
+modules/*/api → modules/*/application → modules/*/domain
+modules/*/application → infra/gateways/ports, infra/database, infra/auth, shared
+modules/*/domain → shared only (no infra, no Fastify)
+infra/providers → ports (implements) + blockchain/SDK clients
+compose → modules (register) + infra (wire deps)
+```
+
+**Ramp ↔ Registry:** no cross-imports between `modules/ramp` and `modules/registry` (or their Etherfuse / Stellar providers).
+
+**Cross-module:** explicit IDs + orchestration in `compose/` or injected ports/callbacks — never import another module's `domain/`.
+
+## Handler template (mandatory for new/changed routes)
+
+1. **Declare Zod schema** in the route `schema:` field — never `safeParse()` in the handler.
+2. **Config guards** in the route (`JWT_SECRET` missing → 503, etc.).
+3. **Delegate** to `modules/{context}/application/commands|queries/executeXxx(deps, input)`.
+4. Route **≤ ~50 lines** per handler — no Drizzle, no SDK clients, no `argon2`.
+5. **Errors:** domain/application throw typed errors (e.g. `AuthError`); route maps once via `map{Context}Error`.
+6. **`AppDeps`** (`src/compose/deps.ts`) is the composition-root entry point for handlers; use `deps.gateways.*` for external systems.
+
+**Role guards:** use `preHandler: requireRoles(...)` (from `src/plugins/require-roles.ts`) for routes restricted to specific roles. Domain policies handle ownership and resource-level checks after the guard passes.
+
+> Full routing standard (type provider, swagger, security) → **`routes-swagger.mdc`**
+
+### Canonical reference: auth login
+
+| Concern | Location |
+| ------- | -------- |
+| HTTP + Zod schema + status mapping | `modules/auth/api/auth.ts` |
+| Login orchestration | `modules/account/application/commands/loginCommands.ts` |
+| Account/principal invariants | `modules/account/domain/policies.ts` |
+| Typed auth errors | `modules/account/domain/errors.ts` |
+| JWT sign/verify | `infra/auth/jwt.ts` (called from application) |
+
+Copy this split when extracting other fat routes.
+
+## CQRS naming
+
+- **Command** — mutates state or calls mutating external APIs (`executeHumanLogin`, `executeCreateReceivable`)
+- **Query** — read-only (`executeGetRampAssets`, list receivables)
+
+Prefer `commands/` vs `queries/` folders under `modules/{ctx}/application/`. Function prefix: **`execute`** + use case name.
+
+## Config & persistence
+
+- New env vars → `src/infra/env/config.ts` + `.env.example` + `API.md`
+- Schema changes → `src/infra/database/schema.ts` + `npm run db:generate` + migrate
+- Multi-row atomic writes → `db.transaction()`
+
+## Adding a chain or vendor
+
+See `src/infra/gateways/README.md` — new chain → `infra/blockchain/{chain}/` + provider + factory branch; no new top-level domain/application trees.
+
+## Legacy debt
+
+Existing fat route handlers with inline Drizzle are grandfathered until touched; **on any significant edit**, extract to module `application/` following the auth template above.

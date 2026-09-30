@@ -1,0 +1,128 @@
+---
+description: Mapa completo de entidades, relacionamentos, padrões transversais e ordem de construção dos módulos Dupply v2
+alwaysApply: true
+---
+
+# Dupply — visão geral de entidades (v2)
+
+Fonte de verdade para o redesign do schema. Cada módulo tem seu próprio `.mdc` detalhado; este arquivo conecta tudo no macro.
+
+---
+
+## Mapa de relacionamentos
+
+```
+account ──1:1──► seller ──1:1──► wallet
+account ──1:1──► risk_analyst
+account ──1:1──► admin
+
+payer  (sem account — notificado informativamente por email)
+
+receivable ──N:1──► seller
+receivable ──N:1──► payer
+
+documents ──N:1──► qualquer entidade (via parentType + parentId)
+
+registry_on_chain ──N:1──► receivable
+```
+
+- Um `account` tem exatamente **uma** role e, portanto, exatamente **um** perfil correspondente (`seller`, `risk_analyst` ou `admin`).
+- `payer` não tem `account` — é identificado por CNPJ/email e recebe notificação informativa (sem login). Quando o seller aceita a proposta do analista (`offer → confirmed`), o sistema dispara email informativo ao `payer.email` (best-effort; falha não reverte a transição). O payer **não** confirma via magic link — `POST /v1/payers/magic-link/respond` retorna **410 Gone**.
+- `wallet` é sempre 1:1 com `seller` (um seller de testnet ≠ um seller de mainnet — são accounts distintas).
+
+---
+
+## Entidades — campos-chave
+
+| Entidade | Campos principais | Módulo |
+|---|---|---|
+| `account` | id, status, email, passwordHash, role, refreshToken, createdAt, updatedAt, deletedAt | 1 |
+| `seller` | id, status, name, companyMetaData, legalRepresentativeMetaData, businessRelationsMetaData, accountId, walletId, createdAt, updatedAt, deletedAt | 2 |
+| `wallet` | id, status, network, address, type, credentialId?, secretEncrypted?, signerPublicKey, createdTxHash, parentType, sellerId?, createdAt, updatedAt, deletedAt | 2 |
+| `risk_analyst` | id, status, name, accountId, createdAt, updatedAt, deletedAt | 3 |
+| `admin` | id, status, name, accountId, createdAt, updatedAt, deletedAt | 3 |
+| `payer` | id, status, legalName, email, cnpj, createdAt, updatedAt, deletedAt | 4 |
+| `receivable` | id, status, sellerId, payerId, receivableMetaData, value, proposedValue, createdAt, updatedAt, deletedAt | 5 |
+| `document` | id, status, parentType, parentId, url, createdAt, updatedAt, deletedAt | 6 |
+| `registry_on_chain` | id, receivableId, issuerPublicKey, status, payload…, createdAt, updatedAt, confirmedAt, deletedAt | 7 |
+| `ramp_quote` | id, userId, provider, externalQuoteId, requestJson, responseJson, expiresAt, status, createdAt, updatedAt, deletedAt | 8 |
+| `ramp_order` | id, userId, rampQuoteId, externalOrderId, status, requestJson, responseJson, createdAt, updatedAt, deletedAt | 8 |
+
+---
+
+## Ordem de construção dos módulos
+
+```
+Módulo 1 — account          (base de auth; nenhum módulo existe sem ele)
+Módulo 2 — seller + wallet  (perfil cedente; wallet é 1:1, criada junto ao seller)
+Módulo 3 — risk_analyst + admin  (perfis simples de plataforma)
+Módulo 4 — payer            (sacado; sem account; notificação informativa)
+Módulo 5 — receivable       (depende de seller e payer)
+Módulo 6 — documents        (polimórfico; pode entrar após módulo 1)
+Módulo 7 — registry_on_chain (substitui tradeBillDrafts + tradeBillChainRecords)
+Módulo 8 — ramp             (migrar existente: add deletedAt + timestamps nativos)
+```
+
+---
+
+## Padrões transversais (obrigatórios em todos os módulos)
+
+### IDs
+- Usar `cuid2` gerado na aplicação (`@paralleldrive/cuid2`).
+- Coluna: `id text PRIMARY KEY`.
+
+### Timestamps
+- **PostgreSQL nativo** — `timestamp` via `drizzle-orm/pg-core`.
+- Todo `pgTable` tem obrigatoriamente:
+  ```typescript
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),  // nullable — soft delete sentinel
+  ```
+- `updatedAt` deve ser atualizado a cada mutação (no handler de comando ou trigger PG).
+- `createdAt` é **imutável** após insert.
+- **Não usar mais `text` com ms epoch** — padrão legado do SQLite.
+
+### Soft delete
+- `deletedAt IS NOT NULL` = registro deletado; **nenhuma query deve retornar** registros deletados a menos que explicitamente solicitado.
+- `status = 'inactive'` = desativado (ainda acessível mas sem operação).
+- Para `account`: `deletedAt IS NOT NULL` impede login mesmo que `status` seja qualquer valor.
+- Toda query de leitura padrão deve incluir `WHERE deleted_at IS NULL`.
+
+### Status
+- Todo `status` é um **enum controlado** — definido como `as const` em TypeScript e refletido como `text` com check constraint no Drizzle.
+- O valor padrão de `status` no insert deve ser explicitado (nunca depender de `undefined`).
+
+### Soft delete em wallet
+- Campo `deletedAt` presente no schema, mas **não ativado em v1** — wallets não são deletadas; somente desativadas via `status`.
+
+---
+
+## Autenticação — resumo da arquitetura
+
+| Ator | Como autentica |
+|---|---|
+| `seller` | JWT (account com role=seller) |
+| `risk_analyst` | JWT (account com role=risk_analyst) |
+| `admin` | JWT (account com role=admin) |
+| `payer` | Sem autenticação na plataforma — notificado por email (sem login) |
+| Sistema / workers | `X-Dupply-Api-Key` header |
+
+- `refreshToken` armazenado diretamente em `account` (v1 — sem suporte a múltiplas sessões simultâneas).
+- JWT contém: `accountId`, `role`, `profileId` (id do seller/risk_analyst/admin correspondente).
+
+---
+
+## Módulos detalhados
+
+Cada módulo tem seu `.mdc` dedicado:
+
+- `module-account.mdc` — auth, JWT, refresh token
+- `module-seller.mdc` — cedente, metadados, wallet
+- `module-wallet.mdc` — carteiras Stellar (classic + smart account)
+- `module-payer.mdc` — sacado, notificação informativa
+- `module-risk-analyst.mdc` — analista e admin
+- `module-receivables.mdc` — duplicata, status machine completa, receivableMetaData, RBAC
+- `module-documents.mdc` — documentos polimórficos
+- `module-registry.mdc` — registro on-chain (Soroban)
+- `module-ramp.mdc` — quotes e orders Etherfuse

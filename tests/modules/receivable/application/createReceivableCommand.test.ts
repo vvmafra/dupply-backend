@@ -1,0 +1,171 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import { eq } from "drizzle-orm";
+
+import { executeCreateReceivable } from "../../../../src/modules/receivable/application/commands/createReceivableCommand.js";
+import { receivables } from "../../../../src/infra/database/schema.runtime.js";
+import { RECEIVABLE_ERROR_CODES, ReceivableError } from "../../../../src/modules/receivable/domain/errors.js";
+import { RECEIVABLE_STATUS } from "../../../../src/modules/receivable/domain/transitions.js";
+import { SellerError, SELLER_ERROR_CODES } from "../../../../src/modules/seller/domain/errors.js";
+import {
+  completeCompanyMetaData,
+  createTestContext,
+  PAYER_CNPJ,
+  setupActiveSeller,
+} from "../../../helpers/receivableTestHelpers.js";
+import { insertAccount } from "../../../helpers/sellerTestHelpers.js";
+import { sellers } from "../../../../src/infra/database/schema.runtime.js";
+
+test("active seller creates draft with sellerId and payerId", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    const { id } = await executeCreateReceivable(deps, {
+      profileId: sellerId,
+      payerCnpj: PAYER_CNPJ,
+      payerLegalName: "Payer Corp",
+      payerFinancialEmail: "finance@payer.com",
+      value: 500,
+    });
+    const [row] = await deps.db.select().from(receivables).where(eq(receivables.id, id));
+    assert.equal(row?.status, RECEIVABLE_STATUS.CREATED);
+    assert.ok(row?.sellerId);
+    assert.ok(row?.payerId);
+  } finally {
+    await handle.close();
+  }
+});
+
+test("inactive seller throws NOT_ACTIVE", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await insertAccount(deps);
+    assert.ok(sellerId);
+    await assert.rejects(
+      () =>
+        executeCreateReceivable(deps, {
+          profileId: sellerId,
+          payerCnpj: PAYER_CNPJ,
+          payerLegalName: "Payer Corp",
+          payerFinancialEmail: "finance@payer.com",
+        }),
+      (e: unknown) => {
+        assert.ok(e instanceof SellerError);
+        assert.equal(e.code, SELLER_ERROR_CODES.NOT_ACTIVE);
+        return true;
+      },
+    );
+  } finally {
+    await handle.close();
+  }
+});
+
+test("same seller/payer CNPJ throws SELLER_PAYER_MUST_DIFFER", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    await assert.rejects(
+      () =>
+        executeCreateReceivable(deps, {
+          profileId: sellerId,
+          payerCnpj: completeCompanyMetaData.cnpj,
+          payerLegalName: "Same Corp",
+          payerFinancialEmail: "same@corp.com",
+        }),
+      (e: unknown) => {
+        assert.ok(e instanceof ReceivableError);
+        assert.equal(e.code, RECEIVABLE_ERROR_CODES.SELLER_PAYER_MUST_DIFFER);
+        return true;
+      },
+    );
+  } finally {
+    await handle.close();
+  }
+});
+
+test("soft-deleted seller cannot create receivable", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    await deps.db
+      .update(sellers)
+      .set({ deletedAt: new Date(), updatedAt: new Date() })
+      .where(eq(sellers.id, sellerId));
+
+    await assert.rejects(
+      () =>
+        executeCreateReceivable(deps, {
+          profileId: sellerId,
+          payerCnpj: PAYER_CNPJ,
+          payerLegalName: "Payer Corp",
+          payerFinancialEmail: "finance@payer.com",
+        }),
+      SellerError,
+    );
+  } finally {
+    await handle.close();
+  }
+});
+
+test("second create with same normalized billNumber throws duplicate_bill_number", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    await executeCreateReceivable(deps, {
+      profileId: sellerId,
+      payerCnpj: PAYER_CNPJ,
+      payerLegalName: "Payer Corp",
+      payerFinancialEmail: "finance@payer.com",
+      receivableMetaData: { billNumber: "abc-1" },
+    });
+
+    await assert.rejects(
+      () =>
+        executeCreateReceivable(deps, {
+          profileId: sellerId,
+          payerCnpj: PAYER_CNPJ,
+          payerLegalName: "Payer Corp",
+          payerFinancialEmail: "finance@payer.com",
+          receivableMetaData: { billNumber: " ABC-1 " },
+        }),
+      (e: unknown) => {
+        assert.ok(e instanceof ReceivableError);
+        assert.equal(e.code, RECEIVABLE_ERROR_CODES.DUPLICATE_BILL_NUMBER);
+        return true;
+      },
+    );
+  } finally {
+    await handle.close();
+  }
+});
+
+test("create after terminal reproved receivable with same keys succeeds", async () => {
+  const { deps, handle } = await createTestContext();
+  try {
+    const { sellerId } = await setupActiveSeller(deps);
+    const firstId = await executeCreateReceivable(deps, {
+      profileId: sellerId,
+      payerCnpj: PAYER_CNPJ,
+      payerLegalName: "Payer Corp",
+      payerFinancialEmail: "finance@payer.com",
+      receivableMetaData: { billNumber: "DUP-RESUBMIT" },
+    }).then((r) => r.id);
+
+    await deps.db
+      .update(receivables)
+      .set({ status: RECEIVABLE_STATUS.REPROVED, updatedAt: new Date() })
+      .where(eq(receivables.id, firstId));
+
+    const { id: secondId } = await executeCreateReceivable(deps, {
+      profileId: sellerId,
+      payerCnpj: PAYER_CNPJ,
+      payerLegalName: "Payer Corp",
+      payerFinancialEmail: "finance@payer.com",
+      receivableMetaData: { billNumber: "DUP-RESUBMIT" },
+    });
+    assert.notEqual(secondId, firstId);
+  } finally {
+    await handle.close();
+  }
+});

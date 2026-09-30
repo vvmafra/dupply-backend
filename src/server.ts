@@ -1,21 +1,18 @@
 import Fastify from "fastify";
+import { serializerCompiler, validatorCompiler } from "fastify-type-provider-zod";
 
-import { loadConfig } from "./config.js";
-import { createDb, runMigrations } from "./db/index.js";
-import { requireDupplyApiKey } from "./plugins/dupply-auth.js";
-import { registerAuthRoutes } from "./routes/v1/auth.js";
-import { registerReceivableInternalRoutes } from "./routes/v1/receivable-internal.js";
-import { registerReceivableRoutes } from "./routes/v1/receivables.js";
-import { registerTradeBillRoutes } from "./routes/v1/trade-bills.js";
-import { registerRampRoutes } from "./routes/v1/ramp.js";
-import { registerEtherfuseWebhook } from "./routes/v1/webhook-etherfuse.js";
-import { requireJwt } from "./plugins/jwt-auth.js";
+import { loadConfig } from "./infra/env/config.js";
+import { createDb, runMigrations } from "./infra/database/index.js";
+import { createGateways } from "./infra/gateways/factories/createGateways.js";
+import { createAppDeps } from "./compose/deps.js";
+import { registerAllModules } from "./compose/registerModules.js";
 
 async function main(): Promise<void> {
   const config = loadConfig();
   const dbHandle = createDb(config.DATABASE_URL);
   await runMigrations(dbHandle);
   const { db } = dbHandle;
+  const gateways = createGateways(config);
 
   const app = Fastify({
     logger: {
@@ -23,33 +20,29 @@ async function main(): Promise<void> {
     },
   });
 
-  app.get("/health", async () => ({ ok: true }));
+  app.setValidatorCompiler(validatorCompiler);
+  app.setSerializerCompiler(serializerCompiler);
 
-  const appDeps = { db, config };
-
-  await app.register(async (scope) => {
-    await registerAuthRoutes(scope, appDeps);
+  app.setErrorHandler((error: unknown, _request, reply) => {
+    if (
+      error !== null &&
+      typeof error === "object" &&
+      "validation" in error &&
+      "statusCode" in error &&
+      (error as { statusCode: unknown }).statusCode === 400
+    ) {
+      return reply.code(400).send({
+        error: "validation_error",
+        details: (error as { validation: unknown }).validation,
+      });
+    }
+    void reply.send(error);
   });
 
-  await app.register(
-    async (scope) => {
-      scope.addHook("preHandler", requireJwt(config));
-      await registerReceivableRoutes(scope, appDeps);
-    },
-    { prefix: "" },
-  );
+  app.get("/health", async () => ({ ok: true }));
 
-  await app.register(
-    async (scope) => {
-      scope.addHook("preHandler", requireDupplyApiKey(config));
-      await registerReceivableInternalRoutes(scope, appDeps);
-      await registerRampRoutes(scope, { db, config });
-      await registerTradeBillRoutes(scope, { db, config });
-    },
-    { prefix: "" },
-  );
-
-  await registerEtherfuseWebhook(app, { db, config });
+  const appDeps = createAppDeps({ db, config, gateways });
+  await registerAllModules(app, appDeps);
 
   await app.listen({ port: config.PORT, host: config.HOST });
 }
@@ -58,3 +51,4 @@ main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+// Reload triggered by reset (v5)

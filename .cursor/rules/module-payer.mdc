@@ -1,0 +1,105 @@
+---
+description: Módulo payer — entidade sacado, notificação informativa, upsert por CNPJ
+globs: src/modules/payer/**
+alwaysApply: false
+---
+
+# Módulo 4 — payer
+
+O **sacado** é a empresa compradora que emitiu a duplicata ao cedente (seller). O payer é **notificado informativamente** quando uma antecipação é confirmada pelo seller — **sem ação obrigatória** para desbloquear o fluxo de liquidação.
+
+---
+
+## Schema
+
+```typescript
+export const payers = pgTable("payers", {
+  id:        text("id").primaryKey(),                      // cuid2
+  status:    text("status").notNull().default("active"),   // active | inactive
+  legalName: text("legal_name").notNull(),                 // razão social
+  email:     text("email").notNull(),
+  cnpj:      text("cnpj").notNull().unique(),              // identificador principal do payer
+  createdAt: timestamp("created_at").notNull().defaultNow(),
+  updatedAt: timestamp("updated_at").notNull().defaultNow(),
+  deletedAt: timestamp("deleted_at"),
+});
+```
+
+---
+
+## Decisões de design
+
+- **Sem `accountId`** — payer **não tem account** na plataforma. Não faz login convencional.
+- **Sem `receivableId`** — o vínculo é feito na tabela `receivable` (receivable tem `payerId`). Um payer pode estar vinculado a múltiplos receivables ao longo do tempo.
+- **CNPJ como identificador único** — um mesmo CNPJ (empresa sacada) compartilha o mesmo registro de payer mesmo que apareça em múltiplos receivables de sellers diferentes.
+- **email** não é único no banco (uma empresa pode ter múltiplos contatos), mas é o canal de notificação principal.
+
+---
+
+## Notificação informativa (substitui confirmação via magic link)
+
+O payer **não confirma** mais a antecipação para desbloquear o fluxo. A confirmação operacional ocorre quando o **seller aceita** a proposta do analista (`offer → confirmed`).
+
+```
+Fluxo atual:
+1. Seller aceita proposta (seller-decision accept)
+2. Receivable transita para confirmed
+3. Sistema envia email informativo ao payer.email (duplicata descontada; pagar Dupply no vencimento)
+4. Falha no email NÃO reverte a transição (best-effort)
+5. Liquidação prossegue via rotas internas (confirmed → processing → …)
+```
+
+**Hook de aplicação:** `notifyPayerReceivableConfirmed` em `src/modules/payer/application/ports/receivableNotification.ts` (stub até Module 4 implementar transporte/templates).
+
+### Magic link — fluxo descontinuado
+
+O fluxo anterior (payer aceita/recusa via magic link após `approved`) foi **removido**. A rota `POST /v1/payers/magic-link/respond` retorna **410 Gone** (`payer_confirmation_removed`).
+
+Infraestrutura de token (`payer_magic_tokens`, `magicLinkToken.ts`) pode ser reutilizada futuramente para links informativos somente leitura — fora do escopo da remoção do gate.
+
+### Schema da tabela auxiliar (planejado — Module 4)
+
+```typescript
+export const payerMagicTokens = pgTable("payer_magic_tokens", {
+  id:          text("id").primaryKey(),
+  payerId:     text("payer_id").notNull().references(() => payers.id),
+  receivableId: text("receivable_id").notNull().references(() => receivables.id),
+  tokenHash:   text("token_hash").notNull().unique(),   // SHA-256 do token em claro
+  expiresAt:   timestamp("expires_at").notNull(),
+  usedAt:      timestamp("used_at"),                    // null = ainda válido
+  createdAt:   timestamp("created_at").notNull().defaultNow(),
+});
+```
+
+---
+
+## Regras de negócio
+
+- Payer é criado/reutilizado no momento em que o seller submete um receivable referenciando aquele CNPJ (upsert por CNPJ).
+- Se o CNPJ já existe em `payers`, reutiliza o registro existente **sem sobrescrever** `legalName` nem `email` — preserva os valores originais.
+- Payer com `deletedAt IS NOT NULL` não pode receber novos receivables vinculados.
+- Payer com `status = 'inactive'` ainda pode ter receivables históricos, mas novos receivables não podem ser vinculados.
+
+---
+
+## Rotas
+
+| Método | Rota | Actor | Descrição |
+|---|---|---|---|
+| POST | `/v1/payers/magic-link/respond` | — | **410 Gone** — confirmação removida (deprecated) |
+
+### Rotas planejadas (Module 4)
+
+| Método | Rota | Actor | Descrição |
+|---|---|---|---|
+| GET | `/v1/payers/:id` | admin ou risk_analyst | Lê perfil do payer |
+| GET | `/v1/payers` | admin | Lista payers |
+| PATCH | `/v1/payers/:id` | admin | Atualiza dados do payer |
+| DELETE | `/v1/payers/:id` | admin | Soft delete |
+
+---
+
+## Dependências
+
+- **Módulo 1** (account) — nenhuma FK direta, mas o sistema de autenticação usa os mesmos middlewares.
+- **Módulo 5** (receivable) — notificação disparada em `confirmed`; `payerId` FK no receivable.

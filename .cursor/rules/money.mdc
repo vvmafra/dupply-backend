@@ -1,0 +1,66 @@
+---
+description: Convenção global de valores monetários — armazenamento em centavos e utilitário de conversão
+globs: src/**/*.ts
+alwaysApply: false
+---
+
+# Convenção — valores monetários
+
+Todos os valores monetários do projeto são armazenados como **inteiros em centavos (BRL)**. Nunca use `float` ou `number` com casas decimais no banco ou em payloads internos.
+
+## Contrato de API
+
+| Camada | Formato | Tipo | Exemplo |
+|--------|---------|------|---------|
+| Input da API (front-end → servidor) | reais com 2 casas decimais | `number` | `150000.00` |
+| Storage (banco / JSON interno) | centavos, inteiro | `integer` | `15000000` |
+| Output da API (servidor → front-end) | reais com 2 casas decimais | `number` | `150000.00` |
+
+> **Regra de ouro:** o front-end sempre fala em reais com 2 casas decimais; o banco sempre guarda centavos inteiros. A conversão acontece na borda da aplicação (ao receber e ao responder).
+
+## Utilitário `src/shared/money.ts`
+
+```typescript
+/** Converte reais (input do front-end) → centavos (storage). */
+export const toCents = (reais: number): number => Math.round(reais * 100);
+
+/** Converte centavos (storage) → reais com 2 casas decimais (output para o front-end). */
+export const toReais = (cents: number): number =>
+  Math.round(cents) / 100;
+```
+
+## Regras
+
+- **Sempre** use `toCents()` ao receber valores da API antes de persistir.
+- **Sempre** use `toReais()` ao devolver valores monetários em qualquer response.
+- Toda lógica de negócio interna opera sobre **centavos** (inteiros).
+- Nunca exponha centavos crus no response — o front-end espera reais com 2 casas decimais.
+- Aplica-se a qualquer campo monetário em qualquer módulo (`shareCapital`, `annualRevenue`, `amount`, `faceValue`, etc.).
+
+## Zod — validação na borda HTTP
+
+```typescript
+// Campo monetário no schema Zod de input
+shareCapital: z.number().nonnegative().multipleOf(0.01),
+// .multipleOf(0.01) garante no máximo 2 casas decimais no input
+```
+
+## Exemplos
+
+```typescript
+// ✅ CORRETO — recebe 150000.00 reais, persiste 15000000 centavos
+const seller = await db.insert(sellers).values({
+  shareCapital: toCents(body.shareCapital), // 150000.00 → 15000000
+});
+
+// ✅ CORRETO — lê 15000000 centavos, devolve 150000.00 reais
+reply.send({ shareCapital: toReais(row.shareCapital) }); // 150000.00
+
+// ❌ ERRADO — persistir o valor do input direto
+const seller = await db.insert(sellers).values({
+  shareCapital: body.shareCapital, // 150000.00 persiste como float — proibido
+});
+
+// ❌ ERRADO — devolver centavos crus para o front-end
+reply.send({ shareCapital: row.shareCapital }); // 15000000 — front-end não espera isso
+```

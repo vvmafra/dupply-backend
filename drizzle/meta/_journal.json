@@ -5,29 +5,15 @@
     {
       "idx": 0,
       "version": "6",
-      "when": 1779047318410,
-      "tag": "0000_init",
+      "when": 1788191686846,
+      "tag": "0000_yielding_donald_blake",
       "breakpoints": true
     },
     {
       "idx": 1,
       "version": "6",
-      "when": 1779047936324,
-      "tag": "0001_duplicata_drafts",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "6",
-      "when": 1779200000000,
-      "tag": "0002_rename_trade_bills",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "6",
-      "when": 1779300000000,
-      "tag": "0003_platform_users_receivables",
+      "when": 1790602083392,
+      "tag": "0001_yielding_skin",
       "breakpoints": true
     }
   ]
